@@ -343,5 +343,6 @@ infringe copyright or break platform rules.
 Built with ❤️ on [yt-dlp](https://github.com/yt-dlp/yt-dlp) and [ffmpeg](https://www.ffmpeg.org). Huge thanks to
 the people behind them.
 
-If Downer is useful to you and you'd like to support it, you can [buy me a coffee on Ko-fi](https://ko-fi.com/dsameendra).
-Entirely optional.
+If Downer is useful to you and you'd like to support it (entirely optional):
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/J5R229G51K)
