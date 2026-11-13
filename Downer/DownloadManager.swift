@@ -222,8 +222,9 @@ final class DownloadManager: ObservableObject {
             let path = Self.path(for: .ytDlp)
             let url = job.url
             let only = job.only
+            let options = job.options
             Task.detached { [weak self] in
-                let result = Self.probe(url: url, ytDlp: path, only: only)
+                let result = Self.probe(url: url, ytDlp: path, options: options, only: only)
                 await self?.applyProbe(result, to: id)
             }
             return
@@ -256,13 +257,12 @@ final class DownloadManager: ObservableObject {
     }
 
     /// One quick yt-dlp call that lists titles without downloading anything.
-    nonisolated private static func probe(url: String, ytDlp: String, only: [Int]?) -> ProbeResult? {
+    nonisolated private static func probe(url: String, ytDlp: String, options: JobOptions, only: [Int]?) -> ProbeResult? {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: ytDlp)
-        var args = ["--flat-playlist", "--no-warnings", "--print", "%(playlist_title|)s\t%(title)s"]
-        if let only { args += ["--playlist-items", only.map(String.init).joined(separator: ",")] }
-        args.append(url)
-        proc.arguments = args
+        // step 1: retry with cookies on sign-in errors
+        proc.arguments = YtDlpArguments.build(
+            for: options, purpose: .probe(only: only), useCookies: false, url: url)
         let pipe = Pipe()
         proc.standardOutput = pipe
         proc.standardError = Pipe()
@@ -337,13 +337,16 @@ final class DownloadManager: ObservableObject {
             return
         }
 
-        var args = Self.formatArguments(for: job.options)
         let pathFile = fm.temporaryDirectory.appendingPathComponent("downer-\(UUID().uuidString).txt")
         self.pathFile = pathFile
-        args += ["--print-to-file", "after_move:filepath", pathFile.path]
-        args += ["--newline", "--ffmpeg-location", (ffmpegPath as NSString).deletingLastPathComponent]
-        if let only = job.only { args += ["--playlist-items", only.map(String.init).joined(separator: ",")] }
-        args.append(job.url)
+        // step 1: retry with cookies on sign-in errors
+        let args = YtDlpArguments.build(
+            for: job.options,
+            purpose: .download(
+                pathFile: pathFile.path,
+                ffmpegDirectory: (ffmpegPath as NSString).deletingLastPathComponent,
+                only: job.only),
+            useCookies: false, url: job.url)
 
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: ytDlpPath)
@@ -398,31 +401,6 @@ final class DownloadManager: ObservableObject {
 
     nonisolated static func path(for tool: Tool) -> String {
         UserDefaults.standard.string(forKey: tool.defaultsKey) ?? tool.defaultPath
-    }
-
-    // MARK: Arguments
-    nonisolated static func formatArguments(for o: JobOptions) -> [String] {
-        func abr(_ quality: String) -> Int? { Int(quality.replacingOccurrences(of: "k", with: "")) }
-        let audioFilter = abr(o.audioQuality).map { "bestaudio[abr<=\($0)][vcodec=none]" } ?? "bestaudio"
-
-        switch o.type {
-        case .audio:
-            var args = ["-f", audioFilter]
-            if o.audioFormat != "source" {  // transcode only if asked
-                args += ["--extract-audio", "--audio-format", o.audioFormat]
-                if let rate = abr(o.audioQuality), rate <= 160 {
-                    args += ["--audio-quality", o.audioQuality]
-                }
-            }
-            return args
-        case .video:
-            return ["-f", "bestvideo[height<=\(o.resolution)][acodec=none]", "--remux-video", o.container]
-        case .both:
-            return [
-                "-f", "bestvideo[height<=\(o.resolution)]+\(audioFilter)",
-                "--merge-output-format", o.container,
-            ]
-        }
     }
 
     // MARK: Output

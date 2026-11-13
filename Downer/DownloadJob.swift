@@ -17,6 +17,11 @@ struct JobOptions: Equatable {
     var audioQuality: String
     var audioFormat: String
     var folder: URL
+    /// nil = don't borrow a browser's login.
+    var cookiesBrowser: CookieBrowser? = nil
+    /// Prefer H.264 video so files play everywhere.
+    var compatibilityH264 = false
+    var extraArguments: [String] = []
 
     static func current(_ defaults: UserDefaults = .standard) -> JobOptions {
         let downloads =
@@ -28,7 +33,11 @@ struct JobOptions: Equatable {
             container: defaults.string(forKey: "selectedVideoFormat") ?? "mp4",
             audioQuality: defaults.string(forKey: "selectedAudioQuality") ?? "source",
             audioFormat: defaults.string(forKey: "selectedAudioFormat") ?? "opus",
-            folder: URL(fileURLWithPath: defaults.string(forKey: "destinationFolder") ?? downloads)
+            folder: URL(fileURLWithPath: defaults.string(forKey: "destinationFolder") ?? downloads),
+            cookiesBrowser: defaults.bool(forKey: "cookiesEnabled")
+                ? CookieBrowser(rawValue: defaults.string(forKey: "cookiesBrowser") ?? "") : nil,
+            compatibilityH264: defaults.bool(forKey: "compatibilityH264"),
+            extraArguments: []  // step 3: parse "extraArguments"
         )
     }
 }
