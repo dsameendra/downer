@@ -229,11 +229,14 @@ final class DownloadManager: ObservableObject {
                 // always without cookies first; with them only after a sign-in failure
                 var result = Self.probe(url: url, ytDlp: path, options: options, only: only, useCookies: false)
                 var usedCookies = false
-                if result.value == nil, options.cookiesBrowser != nil,
-                    ErrorHint.classify(result.errorText, cookiesBrowser: options.cookiesBrowser, usedCookies: false)?.isSignIn == true
+                // the current Sign-in setting, not the one from when the link was added
+                if result.value == nil, let browser = CookieBrowser.current(),
+                    ErrorHint.classify(result.errorText, cookiesBrowser: browser, usedCookies: false)?.isSignIn == true
                 {
+                    var withCookies = options
+                    withCookies.cookiesBrowser = browser
                     usedCookies = true
-                    result = Self.probe(url: url, ytDlp: path, options: options, only: only, useCookies: true)
+                    result = Self.probe(url: url, ytDlp: path, options: withCookies, only: only, useCookies: true)
                 }
                 await self?.applyProbe(result.value, usedCookies: usedCookies && result.value != nil, to: id)
             }
@@ -338,7 +341,12 @@ final class DownloadManager: ObservableObject {
 
     private func run(_ id: UUID) {
         guard let i = jobs.firstIndex(where: { $0.id == id }) else { return }
+        // Sign-in may have been switched off (or changed) since this link was queued
+        let browser = CookieBrowser.current()
+        if jobs[i].needsCookies, browser == nil { jobs[i].needsCookies = false }
         let job = jobs[i]
+        var options = job.options
+        options.cookiesBrowser = browser
         let fm = FileManager.default
         let ytDlpPath = Self.path(for: .ytDlp)
         let ffmpegPath = Self.path(for: .ffmpeg)
@@ -368,7 +376,7 @@ final class DownloadManager: ObservableObject {
         self.pathFile = pathFile
         // cookies only once this job has hit a sign-in wall (see finished(code:job:))
         let args = YtDlpArguments.build(
-            for: job.options,
+            for: options,
             purpose: .download(
                 pathFile: pathFile.path,
                 ffmpegDirectory: (ffmpegPath as NSString).deletingLastPathComponent,
@@ -489,7 +497,7 @@ final class DownloadManager: ObservableObject {
     private func queuePrefix() -> String {
         guard let running = jobs.firstIndex(where: { $0.id == runningID }) else { return "" }
         var prefix = jobs.count > 1 ? "Link \(running + 1) of \(jobs.count) · " : ""
-        if jobs[running].needsCookies, let browser = jobs[running].options.cookiesBrowser {
+        if jobs[running].needsCookies, let browser = CookieBrowser.current() {
             prefix += "Using \(browser.displayName) sign-in · "
         }
         return prefix
@@ -516,13 +524,14 @@ final class DownloadManager: ObservableObject {
         jobs[i].speed = nil
 
         let failedRun = code != 0 || !(jobs[i].playlist?.failed.isEmpty ?? true)
+        let currentBrowser = CookieBrowser.current()
         let hint = failedRun
             ? ErrorHint.classify(
-                errorText, cookiesBrowser: jobs[i].options.cookiesBrowser, usedCookies: jobs[i].needsCookies)
+                errorText, cookiesBrowser: currentBrowser, usedCookies: jobs[i].needsCookies)
             : nil
         if wasCancelled {
             jobs[i].state = .cancelled
-        } else if hint?.isSignIn == true, let browser = jobs[i].options.cookiesBrowser, !jobs[i].needsCookies {
+        } else if hint?.isSignIn == true, let browser = currentBrowser, !jobs[i].needsCookies {
             // a sign-in wall and the person opted in: run this job once more with their browser's cookies
             jobs[i].needsCookies = true
             if let failed = jobs[i].playlist?.failed.map(\.id), !failed.isEmpty { jobs[i].only = failed }

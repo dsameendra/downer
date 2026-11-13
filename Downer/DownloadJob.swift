@@ -36,8 +36,7 @@ struct JobOptions: Equatable {
             audioQuality: defaults.string(forKey: "selectedAudioQuality") ?? "source",
             audioFormat: defaults.string(forKey: "selectedAudioFormat") ?? "opus",
             folder: URL(fileURLWithPath: defaults.string(forKey: "destinationFolder") ?? downloads),
-            cookiesBrowser: defaults.bool(forKey: "cookiesEnabled")
-                ? CookieBrowser(rawValue: defaults.string(forKey: "cookiesBrowser") ?? "") : nil,
+            cookiesBrowser: CookieBrowser.current(defaults),
             compatibilityH264: defaults.bool(forKey: "compatibilityH264"),
             extraArguments: ExtraArguments.parse(defaults.string(forKey: "extraArguments") ?? ""),
             jsRuntimePath: DependencyManager.supportsJsRuntimes(defaults.string(forKey: DependencyManager.ytDlpVersionKey))

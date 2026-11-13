@@ -142,4 +142,20 @@ struct CookieBrowserTests {
         suite.set(true, forKey: "cookiesEnabled")
         #expect(JobOptions.current(suite).cookiesBrowser == .chrome)
     }
+
+    @Test func currentBrowserFollowsTheLiveSetting() {
+        let suite = UserDefaults(suiteName: "downer-cookie-test-\(UUID().uuidString)")!
+        #expect(CookieBrowser.current(suite) == nil)
+        suite.set("safari", forKey: "cookiesBrowser")
+        #expect(CookieBrowser.current(suite) == nil)  // browser alone does not enable it
+        suite.set(true, forKey: "cookiesEnabled")
+        #expect(CookieBrowser.current(suite) == .safari)
+        suite.set("firefox", forKey: "cookiesBrowser")  // changed after a link was queued
+        #expect(CookieBrowser.current(suite) == .firefox)
+        suite.set(false, forKey: "cookiesEnabled")  // switched off: queued links must not use cookies
+        #expect(CookieBrowser.current(suite) == nil)
+        suite.set(true, forKey: "cookiesEnabled")
+        suite.set("not-a-browser", forKey: "cookiesBrowser")
+        #expect(CookieBrowser.current(suite) == nil)
+    }
 }

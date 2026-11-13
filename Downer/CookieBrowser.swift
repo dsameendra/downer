@@ -47,6 +47,14 @@ enum CookieBrowser: String, CaseIterable, Identifiable, Codable {
         NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) != nil
     }
 
+    /// The browser to borrow cookies from right now, or nil when Sign-in is off.
+    /// Read at the moment cookies would be used, so switching Sign-in off (or changing
+    /// the browser) also applies to links that were queued earlier.
+    nonisolated static func current(_ defaults: UserDefaults = .standard) -> CookieBrowser? {
+        guard defaults.bool(forKey: "cookiesEnabled") else { return nil }
+        return CookieBrowser(rawValue: defaults.string(forKey: "cookiesBrowser") ?? "")
+    }
+
     /// The first installed browser, in the order most people use them.
     static var firstInstalled: CookieBrowser? { allCases.first { $0.isInstalled } }
 
