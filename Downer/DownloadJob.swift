@@ -40,7 +40,8 @@ struct JobOptions: Equatable {
                 ? CookieBrowser(rawValue: defaults.string(forKey: "cookiesBrowser") ?? "") : nil,
             compatibilityH264: defaults.bool(forKey: "compatibilityH264"),
             extraArguments: ExtraArguments.parse(defaults.string(forKey: "extraArguments") ?? ""),
-            jsRuntimePath: DependencyManager.locate(.deno)
+            jsRuntimePath: DependencyManager.supportsJsRuntimes(defaults.string(forKey: DependencyManager.ytDlpVersionKey))
+                ? DependencyManager.locate(.deno) : nil
         )
     }
 }

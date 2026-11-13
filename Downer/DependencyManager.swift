@@ -160,8 +160,28 @@ final class DependencyManager: ObservableObject {
                 }
                 result[tool] = ToolStatus(path: path, version: version)
             }
+            // Cached so JobOptions.current can gate version-specific flags without blocking.
+            if let v = result[.ytDlp]?.version {
+                UserDefaults.standard.set(v, forKey: Self.ytDlpVersionKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Self.ytDlpVersionKey)
+            }
             status = result
         }
+    }
+
+    nonisolated static let ytDlpVersionKey = "ytDlpVersion"
+
+    /// `--js-runtimes` first appeared in yt-dlp 2025.11.12; older builds reject it
+    /// as an unknown option, which would fail every download. Unknown version = no.
+    nonisolated static func supportsJsRuntimes(_ version: String?) -> Bool {
+        guard let token = version?.split(whereSeparator: \.isWhitespace).first else { return false }
+        let parts = token.split(separator: ".").map { Int($0) }
+        guard parts.count >= 3, parts.allSatisfy({ $0 != nil }) else { return false }
+        let numbers = parts.compactMap { $0 }
+        let minimum = [2025, 11, 12]
+        for (a, b) in zip(numbers, minimum) where a != b { return a > b }
+        return true
     }
 
     nonisolated static var managedBinDirectory: URL {
