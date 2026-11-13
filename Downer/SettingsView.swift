@@ -401,6 +401,9 @@ struct SettingsView: View {
                     .truncationMode(.middle)
                     .contentTransition(.opacity)
                     .help(st?.path ?? tool.subtitle)
+                    .accessibilityLabel(
+                        installed && !busy ? "Installed" + (st?.version.map { ", version \($0)" } ?? "")
+                            : statusText(tool, installed: installed, version: st?.version, busy: busy))
             }
             .padding(.horizontal, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -446,12 +449,22 @@ struct SettingsView: View {
     }
 
     private func statusText(_ tool: Tool, installed: Bool, version: String?, busy: Bool) -> String {
+        Self.statusText(
+            installed: installed, version: version, busy: busy, checkedOnce: deps.hasCheckedOnce,
+            required: tool.isRequired)
+    }
+
+    /// The text in a tool's status pill. Installed tools show just their version (the green check already
+    /// says "installed"), so it fits next to the Update and Browse… buttons.
+    nonisolated static func statusText(
+        installed: Bool, version: String?, busy: Bool, checkedOnce: Bool, required: Bool
+    ) -> String {
         if busy { return "Working…" }
         if !installed {
-            if !deps.hasCheckedOnce { return "Checking…" }
-            return tool.isRequired ? "Not found" : "Recommended"
+            if !checkedOnce { return "Checking…" }
+            return required ? "Not found" : "Recommended"
         }
-        return version.map { "Installed · \($0)" } ?? "Installed"
+        return version ?? "Installed"
     }
 
     private func pathBinding(for tool: Tool) -> Binding<String> {

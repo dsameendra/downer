@@ -181,3 +181,23 @@ struct ToolUpdateTests {
         #expect(install["PATH"]!.contains("/usr/bin"))
     }
 }
+
+/// The Requirements pill must fit next to Update and Browse…, so an installed tool shows just its version.
+struct RequirementStatusTextTests {
+    func text(installed: Bool = true, version: String? = nil, busy: Bool = false, checked: Bool = true, required: Bool = true) -> String {
+        SettingsView.statusText(installed: installed, version: version, busy: busy, checkedOnce: checked, required: required)
+    }
+
+    @Test func installedShowsOnlyTheVersion() {
+        #expect(text(version: "2026.10.26") == "2026.10.26")
+        #expect(text(version: "9.0.2") == "9.0.2")
+        #expect(text(version: nil) == "Installed")
+    }
+
+    @Test func otherStates() {
+        #expect(text(installed: false, checked: false) == "Checking…")
+        #expect(text(installed: false, required: true) == "Not found")
+        #expect(text(installed: false, required: false) == "Recommended")
+        #expect(text(version: "1.0", busy: true) == "Working…")
+    }
+}
