@@ -3,6 +3,7 @@
 //  DownerTests
 //
 
+import Foundation
 import Testing
 @testable import Downer
 
