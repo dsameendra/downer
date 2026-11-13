@@ -55,7 +55,7 @@ struct MainAppView: View {
     private let resolutionOptions = [
         "4320", "2160", "1080", "720", "480", "360", "240",
     ]
-    private let videoFormatOptions = ["mp4", "mkv", "webm"]
+    private let videoFormatOptions = ["mp4", "mkv", "webm", "mov"]
 
     private let audioQualityOptions: [(label: String, value: String)] = [
         ("Best available", "source"),
@@ -328,28 +328,17 @@ struct MainAppView: View {
 
     private var compatibilityRow: some View {
         HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Best compatibility (H.264)")
-                    .font(.system(size: 14))
-                Text("Plays everywhere — iPhone, iPad, QuickTime. Larger files; up to 1080p on YouTube.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                if compatibilityH264, (Int(selectedResolution) ?? 0) > 1080 {
-                    Text("Capped at 1080p for compatibility")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                }
-            }
+            Text("Best Compatibility")
+                .font(.system(size: 14))
             Spacer(minLength: 0)
-            Toggle("Best compatibility (H.264)", isOn: $compatibilityH264.animation())
+            Toggle("Best Compatibility", isOn: $compatibilityH264.animation())
                 .labelsHidden()
                 .toggleStyle(.switch)
         }
         .padding(.vertical, 8)
         .padding(.leading, 14)
         .padding(.trailing, 12)
-        .frame(minHeight: 58)
+        .frame(minHeight: 52)
     }
 
     private var saveLocation: some View {
@@ -405,6 +394,12 @@ struct MainAppView: View {
                         title: "Video formats and quality",
                         description:
                             "In Video modes, the highest-quality video track up to your selected resolution is fetched and packaged in your chosen container."
+                    )
+                    InfoRow(
+                        icon: "checkmark.seal",
+                        title: "Best Compatibility",
+                        description:
+                            "Saves H.264 video with AAC audio in MP4, which plays in QuickTime, on iPhone and iPad, and almost everywhere. Files are larger, and most YouTube videos offer H.264 only up to 1080p."
                     )
                     InfoRow(
                         icon: "music.note",
