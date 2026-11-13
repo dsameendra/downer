@@ -14,6 +14,7 @@ struct SettingsView: View {
     @AppStorage(Haptics.storageKey) private var hapticsOn = true
     @AppStorage(AppearanceMode.storageKey) private var appearanceRaw = AppearanceMode.system.rawValue
     @AppStorage(UpdateChecker.autoCheckKey) private var autoCheckUpdates = true
+    @AppStorage("extraArguments") private var extraArgumentsText = ""
     @ObservedObject private var deps = DependencyManager.shared
     @ObservedObject private var updates = UpdateChecker.shared
 
@@ -32,6 +33,7 @@ struct SettingsView: View {
                     shortcutGroup.appear(1)
                     requirementsGroup.appear(2)
                     updatesGroup.appear(3)
+                    advancedGroup.appear(4)
                 }
                 .padding(16)
                 .padding(.top, -4)
@@ -121,6 +123,53 @@ struct SettingsView: View {
             .padding(.leading, 14)
             .padding(.trailing, 8)
             .frame(height: 46)
+        }
+    }
+
+    private var advancedGroup: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            OptionGroup(title: "Advanced") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Extra yt-dlp arguments")
+                        .font(.system(size: 14))
+                    TextField("e.g. -t mp4", text: $extraArgumentsText)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13, design: .monospaced))
+                        .autocorrectionDisabled()
+                        .padding(.horizontal, 12)
+                        .frame(height: 30)
+                        .background(Color.primary.opacity(0.08), in: Capsule())
+                    extraArgumentsStatus
+                        .font(.system(size: 12))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.vertical, 10)
+                .padding(.horizontal, 14)
+            }
+            Text("Your arguments come after Downer's format options, so they can override them. Arguments that would break progress tracking or expose cookies are refused.")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 14)
+        }
+    }
+
+    @ViewBuilder
+    private var extraArgumentsStatus: some View {
+        if extraArgumentsText.trimmingCharacters(in: .whitespaces).isEmpty {
+            Text("Optional. Anything yt-dlp accepts, such as --limit-rate 2M.")
+                .foregroundStyle(.secondary)
+        } else {
+            switch ExtraArguments.tokenize(extraArgumentsText) {
+            case .failure(let error):
+                Text(error.reason).foregroundStyle(Color.red)
+            case .success(let tokens):
+                if let error = ExtraArguments.validate(tokens) {
+                    Text(error.reason).foregroundStyle(Color.red)
+                } else {
+                    Text("These are added to every download").foregroundStyle(.secondary)
+                }
+            }
         }
     }
 

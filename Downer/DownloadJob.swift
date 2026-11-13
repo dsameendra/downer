@@ -37,7 +37,7 @@ struct JobOptions: Equatable {
             cookiesBrowser: defaults.bool(forKey: "cookiesEnabled")
                 ? CookieBrowser(rawValue: defaults.string(forKey: "cookiesBrowser") ?? "") : nil,
             compatibilityH264: defaults.bool(forKey: "compatibilityH264"),
-            extraArguments: []  // step 3: parse "extraArguments"
+            extraArguments: ExtraArguments.parse(defaults.string(forKey: "extraArguments") ?? "")
         )
     }
 }
