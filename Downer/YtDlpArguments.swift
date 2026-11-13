@@ -42,7 +42,6 @@ enum YtDlpArguments {
     }
 
     nonisolated static func formatArguments(for o: JobOptions) -> [String] {
-        // step 2: honour o.compatibilityH264
         func abr(_ quality: String) -> Int? { Int(quality.replacingOccurrences(of: "k", with: "")) }
         let audioFilter = abr(o.audioQuality).map { "bestaudio[abr<=\($0)][vcodec=none]" } ?? "bestaudio"
 
@@ -57,8 +56,22 @@ enum YtDlpArguments {
             }
             return args
         case .video:
+            if o.compatibilityH264 {
+                return [
+                    "-f", "bestvideo[height<=\(o.resolution)][acodec=none]",
+                    "--remux-video", "mp4", "-S", "vcodec:h264,lang,quality,res,fps,hdr:12",
+                ]
+            }
             return ["-f", "bestvideo[height<=\(o.resolution)][acodec=none]", "--remux-video", o.container]
         case .both:
+            if o.compatibilityH264 {
+                // yt-dlp's `-t mp4` sort, but keeping our height cap.
+                return [
+                    "-f", "bestvideo[height<=\(o.resolution)]+\(audioFilter)",
+                    "--merge-output-format", "mp4",
+                    "-S", "vcodec:h264,lang,quality,res,fps,hdr:12,acodec:aac",
+                ]
+            }
             return [
                 "-f", "bestvideo[height<=\(o.resolution)]+\(audioFilter)",
                 "--merge-output-format", o.container,

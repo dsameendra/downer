@@ -22,6 +22,7 @@ struct MainAppView: View {
         .rawValue
     @AppStorage("selectedResolution") private var selectedResolution = "1080"
     @AppStorage("selectedVideoFormat") private var selectedVideoFormat = "mp4"
+    @AppStorage("compatibilityH264") private var compatibilityH264 = false
     @AppStorage("selectedAudioQuality") private var selectedAudioQuality =
         "source"
     @AppStorage("selectedAudioFormat") private var selectedAudioFormat = "opus"
@@ -239,11 +240,13 @@ struct MainAppView: View {
                         title: "Container",
                         options: videoFormatOptions.map { $0.uppercased() },
                         selection: Binding(
-                            get: { selectedVideoFormat.uppercased() },
+                            get: { compatibilityH264 ? "MP4" : selectedVideoFormat.uppercased() },
                             set: { selectedVideoFormat = $0.lowercased() }
-                        ),
-                        showsDivider: false
+                        )
                     )
+                    .disabled(compatibilityH264)
+                    .opacity(compatibilityH264 ? 0.5 : 1)
+                    compatibilityRow
                 }
                 .transition(.opacity.combined(with: .scale(scale: 0.97)))
             }
@@ -287,6 +290,32 @@ struct MainAppView: View {
             }
         }
         .motion(value: downloadType.wrappedValue)
+    }
+
+    private var compatibilityRow: some View {
+        HStack(spacing: 14) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Best compatibility (H.264)")
+                    .font(.system(size: 14))
+                Text("Plays everywhere — iPhone, iPad, QuickTime. Larger files; up to 1080p on YouTube.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if compatibilityH264, (Int(selectedResolution) ?? 0) > 1080 {
+                    Text("Capped at 1080p for compatibility")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer(minLength: 0)
+            Toggle("Best compatibility (H.264)", isOn: $compatibilityH264.animation())
+                .labelsHidden()
+                .toggleStyle(.switch)
+        }
+        .padding(.vertical, 8)
+        .padding(.leading, 14)
+        .padding(.trailing, 12)
+        .frame(minHeight: 58)
     }
 
     private var saveLocation: some View {
