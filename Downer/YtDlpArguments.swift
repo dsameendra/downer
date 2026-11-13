@@ -56,27 +56,26 @@ enum YtDlpArguments {
                 }
             }
             return args
-        case .video:
-            if o.compatibilityH264 {
-                return [
-                    "-f", "bestvideo[height<=\(o.resolution)][acodec=none]",
-                    "--remux-video", "mp4", "-S", "vcodec:h264,lang,quality,res,fps,hdr:12",
-                ]
+        case .video, .both:
+            // Best Compatibility forces MP4. MOV can't hold the AV1/VP9 + Opus that yt-dlp's
+            // default sort picks on YouTube (merge or remux fails), so it needs H.264 + AAC too.
+            let container = o.compatibilityH264 ? "mp4" : o.container
+            let wantsH264 = o.compatibilityH264 || container == "mov"
+            let height = "height<=\(o.resolution)"
+            if o.type == .video {
+                var args = ["-f", "bestvideo[\(height)][acodec=none]", "--remux-video", container]
+                if wantsH264 { args += ["-S", "vcodec:h264,lang,quality,res,fps,hdr:12"] }
+                return args
             }
-            return ["-f", "bestvideo[height<=\(o.resolution)][acodec=none]", "--remux-video", o.container]
-        case .both:
-            if o.compatibilityH264 {
-                // yt-dlp's `-t mp4` sort, but keeping our height cap.
-                return [
-                    "-f", "bestvideo[height<=\(o.resolution)]+\(audioFilter)",
-                    "--merge-output-format", "mp4",
-                    "-S", "vcodec:h264,lang,quality,res,fps,hdr:12,acodec:aac",
-                ]
-            }
-            return [
-                "-f", "bestvideo[height<=\(o.resolution)]+\(audioFilter)",
-                "--merge-output-format", o.container,
+            // WebM only holds VP8/VP9/AV1 + Opus/Vorbis; "webm/mkv" lets yt-dlp fall back to
+            // MKV instead of failing when a site only offers H.264/AAC.
+            var args = [
+                "-f", "bestvideo[\(height)]+\(audioFilter)",
+                "--merge-output-format", container == "webm" ? "webm/mkv" : container,
             ]
+            // yt-dlp's `-t mp4` sort, but keeping our height cap.
+            if wantsH264 { args += ["-S", "vcodec:h264,lang,quality,res,fps,hdr:12,acodec:aac"] }
+            return args
         }
     }
 }

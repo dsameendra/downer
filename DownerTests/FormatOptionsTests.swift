@@ -41,6 +41,37 @@ struct FormatOptionsTests {
         ])
     }
 
+    @Test func h264OverridesChosenContainer() {
+        let a = YtDlpArguments.formatArguments(for: options(.both, h264: true, container: "webm"))
+        #expect(a.contains("mp4") && !a.contains("webm/mkv"))
+    }
+
+    @Test func movNeedsH264AndAac() {
+        let both = YtDlpArguments.formatArguments(for: options(.both, container: "mov"))
+        #expect(both == [
+            "-f", "bestvideo[height<=1080]+bestaudio", "--merge-output-format", "mov",
+            "-S", "vcodec:h264,lang,quality,res,fps,hdr:12,acodec:aac",
+        ])
+        let video = YtDlpArguments.formatArguments(for: options(.video, resolution: "720", container: "mov"))
+        #expect(video == [
+            "-f", "bestvideo[height<=720][acodec=none]", "--remux-video", "mov",
+            "-S", "vcodec:h264,lang,quality,res,fps,hdr:12",
+        ])
+    }
+
+    @Test func webmMergeFallsBackToMkv() {
+        let both = YtDlpArguments.formatArguments(for: options(.both, container: "webm"))
+        #expect(both == ["-f", "bestvideo[height<=1080]+bestaudio", "--merge-output-format", "webm/mkv"])
+        let video = YtDlpArguments.formatArguments(for: options(.video, resolution: "720", container: "webm"))
+        #expect(video == ["-f", "bestvideo[height<=720][acodec=none]", "--remux-video", "webm"])
+    }
+
+    @Test func mp4AndMkvStayUnsorted() {
+        for c in ["mp4", "mkv"] {
+            #expect(!YtDlpArguments.formatArguments(for: options(.both, container: c)).contains("-S"))
+        }
+    }
+
     @Test func audioIgnoresH264() {
         #expect(
             YtDlpArguments.formatArguments(for: options(.audio, h264: true))
