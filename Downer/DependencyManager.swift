@@ -149,6 +149,7 @@ final class DependencyManager: ObservableObject {
     }
 
     /// True while any tool is being installed or updated (its binary may be swapped).
+    /// Downloads and look-ups wait while this is true.
     var isBusy: Bool { !installing.isEmpty }
 
     func isInstalling(_ tool: Tool) -> Bool {
@@ -180,17 +181,46 @@ final class DependencyManager: ObservableObject {
                     UserDefaults.standard.set(path, forKey: tool.defaultsKey)
                 }
             }
-            // Cached so JobOptions.current can gate version-specific flags without blocking.
-            if let v = result[.ytDlp]?.version {
-                UserDefaults.standard.set(v, forKey: Self.ytDlpVersionKey)
-            } else {
-                UserDefaults.standard.removeObject(forKey: Self.ytDlpVersionKey)
-            }
+            // Cached, with the binary it belongs to, so a download can gate version-specific flags
+            // for the yt-dlp it is about to run without blocking (see jsRuntimePath(forYtDlpAt:)).
+            Self.cacheYtDlpVersion(result[.ytDlp]?.version, path: result[.ytDlp]?.path)
             status = result
         }
     }
 
     nonisolated static let ytDlpVersionKey = "ytDlpVersion"
+    nonisolated static let ytDlpVersionPathKey = "ytDlpVersionPath"
+
+    nonisolated static func cacheYtDlpVersion(_ version: String?, path: String?, defaults: UserDefaults = .standard) {
+        if let version, let path {
+            defaults.set(version, forKey: ytDlpVersionKey)
+            defaults.set(path, forKey: ytDlpVersionPathKey)
+        } else {
+            defaults.removeObject(forKey: ytDlpVersionKey)
+            defaults.removeObject(forKey: ytDlpVersionPathKey)
+        }
+    }
+
+    /// deno's path to pass with `--js-runtimes` to the yt-dlp at `ytDlpPath`, or nil when that yt-dlp is
+    /// too old for the flag, its version is not known yet, or deno is not installed. The cached version
+    /// must belong to that same binary: after Browse… picks an older yt-dlp, the flag stops at once.
+    /// A version cached by an earlier Downer (no path saved with it) is trusted until the next refresh.
+    nonisolated static func jsRuntimePath(
+        forYtDlpAt ytDlpPath: String, defaults: UserDefaults = .standard, deno: () -> String? = { locate(.deno) }
+    ) -> String? {
+        let cachedFor = defaults.string(forKey: ytDlpVersionPathKey)
+        guard cachedFor == nil || cachedFor == ytDlpPath,
+            supportsJsRuntimes(defaults.string(forKey: ytDlpVersionKey))
+        else { return nil }
+        return deno()
+    }
+
+    /// Reads the version of the yt-dlp downloads will now use and caches it, so the queue (which resumes
+    /// as soon as an install or update ends) gates `--js-runtimes` on the right binary straight away.
+    nonisolated static func cacheVersionOfLocatedYtDlp() {
+        let path = locate(.ytDlp)
+        cacheYtDlpVersion(path.flatMap { version(of: .ytDlp, at: $0) }, path: path)
+    }
 
     /// `--js-runtimes` first appeared in yt-dlp 2025.11.12; older builds reject it
     /// as an unknown option, which would fail every download. Unknown version = no.
@@ -277,6 +307,7 @@ final class DependencyManager: ObservableObject {
             }
             // the queue resumes the moment `installing` empties and reads the saved path, so save it first
             Self.persistLocatedPaths(for: group)
+            if group == .ytDlp { await Task.detached { Self.cacheVersionOfLocatedYtDlp() }.value }
             installing.remove(group)
             log = ""
             refresh()
@@ -320,7 +351,7 @@ final class DependencyManager: ObservableObject {
     }
 
     /// Runs a process, streaming its last output line into the log.
-    private func run(_ path: String, _ arguments: [String], brewEnvironment: Bool = false)
+    func run(_ path: String, _ arguments: [String], brewEnvironment: Bool = false)
         async throws -> (status: Int32, output: String)
     {
         try await withCheckedThrowingContinuation {
@@ -334,33 +365,48 @@ final class DependencyManager: ObservableObject {
             let pipe = Pipe()
             proc.standardOutput = pipe
             proc.standardError = pipe
-            let collected = LockedText()
-            pipe.fileHandleForReading.readabilityHandler = { [weak self] h in
-                let data = h.availableData
-                guard !data.isEmpty else {
-                    h.readabilityHandler = nil
-                    return
-                }
-                guard let s = String(data: data, encoding: .utf8) else { return }
-                collected.append(s)
-                Task { @MainActor in
-                    self?.setLog(s)
-                }
-            }
-            proc.terminationHandler = { p in
-                pipe.fileHandleForReading.readabilityHandler = nil
-                // anything the handler had not picked up yet
-                if let rest = try? pipe.fileHandleForReading.readToEnd(),
-                    let s = String(data: rest, encoding: .utf8)
-                {
-                    collected.append(s)
-                }
-                cont.resume(returning: (p.terminationStatus, collected.value))
-            }
             do { try proc.run() } catch {
                 cont.resume(throwing: InstallError.updateFailed(error.localizedDescription))
+                return
+            }
+            // our copy of the write end must close, or the reader never sees the end of the output
+            try? pipe.fileHandleForWriting.close()
+            // One reader, then exactly one exit event, even if something the tool started (brew's
+            // background clean-up, say) keeps the pipe open: OutputPump gives up on it after 2 seconds,
+            // so `installing` always empties and waiting downloads carry on.
+            let output = OutputPump()
+            output.start(reading: pipe.fileHandleForReading, process: proc)
+            Task { @MainActor [weak self] in
+                // a few log updates a second are plenty, and keep a chatty `brew upgrade` from
+                // re-rendering Settings for every line
+                var shown = Date.distantPast
+                let result = await Self.collect(output.events) { line in
+                    guard Date().timeIntervalSince(shown) >= 0.1 else { return }
+                    shown = Date()
+                    self?.setLog(line)
+                }
+                if let last = result.output.split(whereSeparator: \.isNewline).last { self?.setLog(String(last)) }
+                cont.resume(returning: result)
             }
         }
+    }
+
+    /// All lines of a tool's output (joined with newlines) and its exit status, each line passed to
+    /// `onLine` as it arrives.
+    static func collect(
+        _ events: AsyncStream<OutputPump.Event>, onLine: (String) -> Void
+    ) async -> (status: Int32, output: String) {
+        var lines: [String] = []
+        for await event in events {
+            switch event {
+            case .line(let line):
+                lines.append(line)
+                onLine(line)
+            case .exit(let code):
+                return (code, lines.joined(separator: "\n"))
+            }
+        }
+        return (-1, lines.joined(separator: "\n"))  // the stream always ends with .exit; just in case
     }
 
     // MARK: Verified downloads
@@ -576,6 +622,7 @@ final class DependencyManager: ObservableObject {
                 failure = error.localizedDescription
             }
             Self.persistLocatedPaths(for: group)
+            if group == .ytDlp { await Task.detached { Self.cacheVersionOfLocatedYtDlp() }.value }
             installing.remove(group)
             log = ""
             refresh()
@@ -626,12 +673,4 @@ final class DependencyManager: ObservableObject {
         if env["HOME"] == nil { env["HOME"] = NSHomeDirectory() }
         return env
     }
-}
-
-/// Collects process output from a readability handler's background queue.
-private final class LockedText: @unchecked Sendable {
-    private let lock = NSLock()
-    private var text = ""
-    func append(_ s: String) { lock.lock(); text += s; lock.unlock() }
-    var value: String { lock.lock(); defer { lock.unlock() }; return text }
 }

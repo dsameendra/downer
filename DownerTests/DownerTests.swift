@@ -41,6 +41,7 @@ struct YtDlpArgumentsTests {
             + cookiesOff
             + infoJsonOff
             + ["-o", "/Users/x/Downloads/%(title)s [%(id)s].%(ext)s"]
+            + ["-o", "chapter:/Users/x/Downloads/%(title)s - %(section_number)03d %(section_title)s [%(id)s].%(ext)s"]
             + ["--print-to-file", "after_move:filepath", "/tmp/p.txt", "--newline", "--ffmpeg-location", "/opt/ff", link]
         #expect(args == expected)
     }
@@ -51,6 +52,25 @@ struct YtDlpArgumentsTests {
         #expect(YtDlpArguments.outputTemplate(folder: "/Users/x/%(id)s/")
             == "/Users/x/%%(id)s/%(title)s [%(id)s].%(ext)s")
         #expect(YtDlpArguments.outputTemplate(folder: "/").hasPrefix("//") == false)
+        // a folder name ending in a space is kept exactly (yt-dlp would trim a -P path)
+        #expect(YtDlpArguments.outputTemplate(folder: "/Users/x/Videos ", file: "f")
+            == "/Users/x/Videos /f")
+    }
+
+    /// yt-dlp runs in a private folder that is deleted afterwards, so every output template must be an
+    /// absolute path in the destination. Thumbnails, subtitles and playlist files follow the default
+    /// template; chapters from --split-chapters have their own, so it is set too.
+    @Test func everyOutputGoesUnderTheDestination() {
+        let args = YtDlpArguments.build(
+            for: options(extra: ["--split-chapters"]), purpose: download(), useCookies: false, url: link)
+        let templates = args.indices.filter { args[$0] == "-o" }.map { args[$0 + 1] }
+        #expect(templates == [
+            "/Users/x/Downloads/" + YtDlpArguments.defaultFileTemplate,
+            "chapter:/Users/x/Downloads/" + YtDlpArguments.chapterFileTemplate,
+        ])
+        // Downer's templates come after the extra args, so they win over anything before them
+        #expect(args.firstIndex(of: "-o")! > args.firstIndex(of: "--split-chapters")!)
+        #expect(!args.contains("-P") && !args.contains("--paths"))
     }
 
     @Test func runDirectoryIsPrivateAndEmpty() throws {
@@ -72,19 +92,21 @@ struct YtDlpArgumentsTests {
         #expect(Array(args[(format.count + 2)...].prefix(2)) == cookiesOff)
         #expect(Array(args[(format.count + 4)...].prefix(2)) == infoJsonOff)
         #expect(args[format.count + 6] == "-o")  // after the extra args, so nothing can override it
-        #expect(args[format.count + 8] == "--print-to-file")
+        #expect(args[format.count + 8] == "-o")  // chapters
+        #expect(args[format.count + 10] == "--print-to-file")
+        // the look-up only gets extra args that change how the site is reached
         let probe = YtDlpArguments.build(for: o, purpose: .probe(only: nil), useCookies: false, url: link)
-        #expect(probe == ["--foo", "bar"] + cookiesOff + probeFlags + [link])
+        #expect(probe == cookiesOff + probeFlags + [link])
     }
 
     @Test func cookiesOnlyWhenRequestedAndSet() {
-        let withBrowser = options(cookies: .firefox, extra: ["--x"])
+        let withBrowser = options(cookies: .firefox, extra: ["--force-ipv4"])
         let pair = ["--cookies-from-browser", "firefox"]
         let on = YtDlpArguments.build(for: withBrowser, purpose: .probe(only: nil), useCookies: true, url: link)
-        #expect(on == ["--x", "--no-cookies"] + pair + probeFlags + [link])
+        #expect(on == ["--force-ipv4", "--no-cookies"] + pair + probeFlags + [link])
         let off = YtDlpArguments.build(for: withBrowser, purpose: .probe(only: nil), useCookies: false, url: link)
         #expect(!off.contains("--cookies-from-browser"))
-        #expect(off == ["--x"] + cookiesOff + probeFlags + [link])
+        #expect(off == ["--force-ipv4"] + cookiesOff + probeFlags + [link])
         let none = YtDlpArguments.build(for: options(), purpose: download(), useCookies: true, url: link)
         #expect(!none.contains("--cookies-from-browser"))
         #expect(none.contains("--no-cookies-from-browser"))  // nothing chosen: a config's browser is still cancelled
@@ -93,7 +115,7 @@ struct YtDlpArgumentsTests {
         #expect(dl[i + 1] == "firefox")
         #expect(i < dl.firstIndex(of: "--print-to-file")!)
         // info-json is cancelled after the user's extra args and the cookie flags, for downloads only
-        #expect(dl.firstIndex(of: "--no-write-info-json")! > dl.firstIndex(of: "--x")!)
+        #expect(dl.firstIndex(of: "--no-write-info-json")! > dl.firstIndex(of: "--force-ipv4")!)
         #expect(dl.firstIndex(of: "--no-embed-info-json")! > i)
         #expect(!on.contains("--no-write-info-json"))
         // --no-cookies precedes the browser flag, and a config's cookie jar can never be read or rewritten

@@ -143,6 +143,8 @@ Turn on **Best Compatibility** (under the Container picker) to save H.264 video 
 **Settings → Advanced → Extra yt-dlp arguments** adds your own options, for example `--limit-rate 2M`, `--embed-subs` or `-t mp4`, to every download.
 
 - They come **after** Downer's own format options, so they can override them. Downer's cookie, output and progress options come after yours and always win.
+- The quick look-up that reads a link's title only uses the options that change how the site is reached (`--proxy`, `--geo-verification-proxy`, `--xff`, `--source-address`, `--socket-timeout`, `-4`, `-6`, `--extractor-retries`, `--extractor-args`). Filters, waits and format choices apply only to the download, so they can't stall or empty the look-up.
+- Files from options such as `--split-chapters`, `--write-thumbnail` or `--write-subs` are saved in your download folder, next to the video.
 - Quotes and backslashes work as in a shell. The field says whether what you typed is accepted.
 - Only a list of common download options is allowed, not everything `yt-dlp` has:
   - format selection and sorting (`-f`, `-S`, `--merge-output-format`, `-t` with `mp3`, `aac`, `mp4`, `mkv` or `sleep`)

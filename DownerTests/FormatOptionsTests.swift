@@ -229,10 +229,66 @@ struct FormatOptionsTests {
         #expect(args.last == "https://x")
     }
 
-    @Test func probeIncludesExtraArgumentsButNoFormat() {
-        let o = options(.both, h264: true, extra: ["--limit-rate", "2M"])
+    @Test func probeGetsOnlyConnectionArgumentsAndNoFormat() {
+        let o = options(.both, h264: true, extra: ["--limit-rate", "2M", "--proxy", "socks5://127.0.0.1:1080"])
         let args = YtDlpArguments.build(for: o, purpose: .probe(only: nil), useCookies: false, url: "u")
-        #expect(args.contains("--limit-rate"))
+        #expect(!args.contains("--limit-rate") && !args.contains("2M"))
+        #expect(args.prefix(2) == ["--proxy", "socks5://127.0.0.1:1080"])
         #expect(!args.contains("-S"))
+        // the download still gets every extra argument
+        let dl = YtDlpArguments.build(
+            for: o, purpose: .download(pathFile: "/p", ffmpegDirectory: "/f", outputFolder: "/o", only: nil),
+            useCookies: false, url: "u")
+        #expect(dl.contains("--limit-rate") && dl.contains("--proxy"))
+    }
+}
+
+/// The quick look-up must not be stalled, emptied or failed by options meant for the download.
+struct LookupArgumentsTests {
+    func lookup(_ text: String) -> [String] {
+        guard case .success(let tokens) = ExtraArguments.check(try! ExtraArguments.tokenize(text).get()) else {
+            Issue.record("refused: \(text)")
+            return []
+        }
+        return ExtraArguments.forLookup(tokens)
+    }
+
+    @Test func waitsFiltersAndFormatsStayWithTheDownload() {
+        #expect(lookup("--wait-for-video 60") == [])
+        #expect(lookup("--sleep-requests 5 --sleep-interval 3") == [])
+        #expect(lookup("--match-filters 'duration>60'") == [])
+        #expect(lookup("-f 'bv*[height<=480]+ba' -S res") == [])
+        #expect(lookup("--age-limit 18 --date 20240101") == [])
+        #expect(lookup("--split-chapters --embed-subs --limit-rate 2M") == [])
+    }
+
+    @Test func connectionOptionsReachTheLookup() {
+        #expect(lookup("--proxy http://p:8080") == ["--proxy", "http://p:8080"])
+        #expect(lookup("--proxy=http://p:8080") == ["--proxy=http://p:8080"])
+        #expect(lookup("--extractor-args youtube:player_client=web") == ["--extractor-args", "youtube:player_client=web"])
+        #expect(lookup("-4") == ["-4"])
+        #expect(lookup("--force-ipv6 --socket-timeout 20 --xff US") == ["--force-ipv6", "--socket-timeout", "20", "--xff", "US"])
+        #expect(lookup("--source-address 10.0.0.2 --geo-verification-proxy http://g --extractor-retries 5")
+            == ["--source-address", "10.0.0.2", "--geo-verification-proxy", "http://g", "--extractor-retries", "5"])
+    }
+
+    @Test func mixedArgumentsKeepOrderAndValuesStayPaired() {
+        #expect(lookup("--limit-rate 2M --proxy http://p -f best --wait-for-video 30 -6")
+            == ["--proxy", "http://p", "-6"])
+        // a value that looks like a lookup option is still the value of the option before it
+        #expect(lookup("--sub-langs --proxy") == [])
+    }
+
+    @Test func shortBundlesKeepOnlyTheLettersThatApply() {
+        #expect(lookup("-4x") == ["-4"])
+        #expect(lookup("-4f best") == ["-4"])  // -f takes "best"; it must not leak through
+        #expect(lookup("-4fbest") == ["-4"])
+        #expect(lookup("-x -R 3 -6") == ["-6"])
+        #expect(lookup("-N 4") == [])
+    }
+
+    @Test func everyLookupNameIsAnAllowedOption() {
+        let allowed = Set(ExtraArguments.allowedNames)
+        for name in ExtraArguments.lookupNames { #expect(allowed.contains(name), "\(name)") }
     }
 }

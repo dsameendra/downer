@@ -51,27 +51,40 @@ enum ErrorHint: Equatable {
         return nil
     }
 
+    /// Whether a failed run hit a sign-in wall, which is what lets Downer retry with the browser's cookies.
+    /// Only ERROR lines decide: a sign-in WARNING next to some other failure (a network error, a missing
+    /// video, or a format the person's own `-f` asked for) must never cause a cookie retry and its
+    /// Keychain prompt.
+    nonisolated static func requiresSignIn(_ log: ErrorLog) -> Bool {
+        classify(log.errors.joined(separator: "\n"), cookiesBrowser: nil, usedCookies: false)?.isSignIn == true
+    }
+
     /// The hint to show for a failed run. Cookie problems anywhere in the output win (they explain why a
-    /// sign-in still failed); otherwise the last ERROR line decides, so one odd item in a playlist does not
-    /// relabel the whole run; the full text is the fallback.
-    nonisolated static func classifyForDisplay(
-        errorText: String, lastError: String?, cookiesBrowser: CookieBrowser?, usedCookies: Bool
+    /// sign-in still failed, and yt-dlp often reports them as warnings). A sign-in hint is shown only when
+    /// `requiresSignIn` agrees, so the hint and the cookie retry never disagree. Otherwise the last ERROR
+    /// line decides, so one odd item in a playlist does not relabel the whole run; then all ERROR lines,
+    /// then the warnings.
+    nonisolated static func forFailedRun(
+        _ log: ErrorLog, cookiesBrowser: CookieBrowser?, usedCookies: Bool
     ) -> ErrorHint? {
-        let whole = classify(errorText, cookiesBrowser: cookiesBrowser, usedCookies: usedCookies)
+        func hint(_ text: String) -> ErrorHint? {
+            classify(text, cookiesBrowser: cookiesBrowser, usedCookies: usedCookies)
+        }
+        let whole = hint(log.text)
         switch whole {
         case .safariAccess?, .keychain?, .browserNotFound?: return whole
         default: break
         }
-        if let lastError,
-            let last = classify(lastError, cookiesBrowser: cookiesBrowser, usedCookies: usedCookies)
-        {
-            // keep the site wording from the whole run (the tag may sit on an earlier line)
-            if case .signIn(let b, let u, _) = last, case .signIn(_, _, let y)? = whole {
-                return .signIn(browser: b, usedCookies: u, youtube: y)
-            }
-            return last
+        let last = log.lastError.flatMap(hint)
+        if requiresSignIn(log), last == nil || last?.isSignIn == true {
+            // the site tag may sit on an earlier line than the sign-in message
+            return .signIn(
+                browser: cookiesBrowser, usedCookies: usedCookies, youtube: log.text.lowercased().contains("[youtube"))
         }
-        return whole
+        // a sign-in warning must not hide another warning's hint (an outdated yt-dlp, say)
+        let otherWarnings = log.warnings.filter { hint($0)?.isSignIn != true }
+        let fallback = [last, hint(log.errors.joined(separator: "\n")), hint(otherWarnings.joined(separator: "\n"))]
+        return fallback.compactMap { $0 }.first { !$0.isSignIn }
     }
 
     /// A sign-in hint with no browser means Sign-in was off, unless it is on and its browser is gone.

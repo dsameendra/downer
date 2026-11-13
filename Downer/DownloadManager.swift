@@ -28,7 +28,9 @@ final class DownloadManager: ObservableObject {
     private var tracker = PlaylistTracker()
     private var pathFile: URL?
     private var runDirectory: URL?
-    private var lastErrorLine: String?
+    /// "Chrome sign-in · " while the running job uses a browser's cookies; fixed when the run starts, so
+    /// the many progress lines don't look the browser up again.
+    private var cookiePrefix = ""
     /// ERROR and WARNING lines of the current run (in memory only, capped), used to pick an error hint.
     private var errorLog = ErrorLog()
     /// Shown instead of "Starting download…" when a job starts again after a retry, so the retry is visible.
@@ -258,7 +260,7 @@ final class DownloadManager: ObservableObject {
     // MARK: Looking links up
     private func resolveNext() {
         guard !resolving, !stopQueue else { return }
-        if QueueLogic.mustWaitForInstall(DependencyManager.shared.installing) {
+        if DependencyManager.shared.isBusy {
             if jobs.contains(where: { $0.state == .queued }) && runningID == nil {
                 status = "Waiting for the update to finish…"
             }
@@ -275,7 +277,9 @@ final class DownloadManager: ObservableObject {
             let path = Self.path(for: .ytDlp)
             let url = job.url
             let only = job.only
-            let options = job.options
+            var options = job.options
+            // decided for the yt-dlp that will actually run, not when the link was added
+            options.jsRuntimePath = DependencyManager.jsRuntimePath(forYtDlpAt: path)
             Task.detached { [weak self] in
                 // always without cookies first; with them only after a sign-in failure
                 var result = Self.probe(
@@ -353,21 +357,22 @@ final class DownloadManager: ObservableObject {
         try? errorPipe.fileHandleForWriting.close()
 
         // read stderr alongside stdout so neither pipe can fill up and stall yt-dlp
-        let errors = ErrorCollector()
+        let errors = LockedText()
         let errorDone = DispatchSemaphore(value: 0)
         DispatchQueue.global().async {
-            errors.set(errorPipe.fileHandleForReading.readDataToEndOfFile())
+            errors.set(ErrorLog(output: errorPipe.fileHandleForReading.readDataToEndOfFile()).text)
             errorDone.signal()
         }
 
-        // a link that never answers must not hold up the queue
+        // a link that never answers must not hold up the queue; with cookies, leave time for the Keychain prompt
         let watchdog = DispatchWorkItem { if proc.isRunning { proc.terminate() } }
-        DispatchQueue.global().asyncAfter(deadline: .now() + 45, execute: watchdog)
+        DispatchQueue.global().asyncAfter(
+            deadline: .now() + QueueLogic.probeTimeout(useCookies: useCookies), execute: watchdog)
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         proc.waitUntilExit()
         watchdog.cancel()
         errorDone.wait()
-        let errorText = errors.text
+        let errorText = errors.value
         guard proc.terminationStatus == 0 else { return (nil, errorText) }
         return (parse(data), errorText)
     }
@@ -398,7 +403,7 @@ final class DownloadManager: ObservableObject {
             return
         }
         // a tool is being updated or installed: wait, and carry on when it is done
-        if QueueLogic.mustWaitForInstall(DependencyManager.shared.installing) {
+        if DependencyManager.shared.isBusy {
             status = "Waiting for the update to finish…"
             return
         }
@@ -421,8 +426,10 @@ final class DownloadManager: ObservableObject {
         let job = jobs[i]
         var options = job.options
         options.cookiesBrowser = browser
-        let fm = FileManager.default
         let ytDlpPath = Self.path(for: .ytDlp)
+        // decided for the yt-dlp that will actually run (it may have been changed since the link was added)
+        options.jsRuntimePath = DependencyManager.jsRuntimePath(forYtDlpAt: ytDlpPath)
+        let fm = FileManager.default
         let ffmpegPath = Self.path(for: .ffmpeg)
         let ffprobePath = Self.path(for: .ffprobe)
 
@@ -481,8 +488,8 @@ final class DownloadManager: ObservableObject {
             ? PlaylistTracker()
             : PlaylistTracker(retrying: job.only, keeping: job.playlist)
         wasCancelled = false
-        lastErrorLine = nil
         errorLog = ErrorLog()
+        cookiePrefix = job.needsCookies ? (browser.map { "\($0.displayName) sign-in · " } ?? "") : ""
         jobs[i].state = .running
         jobs[i].detail = nil
         jobs[i].suggestsSignInSetting = false
@@ -523,7 +530,6 @@ final class DownloadManager: ObservableObject {
     private func handle(line raw: String, job id: UUID) {
         guard id == runningID, let i = jobs.firstIndex(where: { $0.id == id }) else { return }
         let line = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        if line.hasPrefix("ERROR") { lastErrorLine = line }
         errorLog.consume(line)
 
         tracker.consume(line)
@@ -573,11 +579,7 @@ final class DownloadManager: ObservableObject {
     /// Also says "Safari sign-in · " while the running job borrows a browser's cookies.
     private func queuePrefix() -> String {
         guard let running = jobs.firstIndex(where: { $0.id == runningID }) else { return "" }
-        var prefix = jobs.count > 1 ? "Link \(running + 1) of \(jobs.count) · " : ""
-        if jobs[running].needsCookies, let browser = CookieBrowser.current() {
-            prefix += "\(browser.displayName) sign-in · "
-        }
-        return prefix
+        return (jobs.count > 1 ? "Link \(running + 1) of \(jobs.count) · " : "") + cookiePrefix
     }
 
     private func finished(code: Int32, job id: UUID) {
@@ -605,15 +607,13 @@ final class DownloadManager: ObservableObject {
         let failedRun = code != 0 || !(jobs[i].playlist?.failed.isEmpty ?? true)
         let currentBrowser = CookieBrowser.current()
         let usedCookies = jobs[i].needsCookies
-        // any sign-in ERROR in the run triggers the cookie retry; the shown hint follows the last ERROR line
-        let signInSeen = failedRun
-            && ErrorHint.classify(errorLog.text, cookiesBrowser: currentBrowser, usedCookies: usedCookies)?.isSignIn == true
+        // a sign-in ERROR in the run triggers the cookie retry (see requiresSignIn); the hint agrees with it
+        let signInSeen = failedRun && ErrorHint.requiresSignIn(errorLog)
         let hint = failedRun
-            ? ErrorHint.classifyForDisplay(
-                errorText: errorLog.text, lastError: errorLog.lastError,
-                cookiesBrowser: currentBrowser, usedCookies: usedCookies)
+            ? ErrorHint.forFailedRun(errorLog, cookiesBrowser: currentBrowser, usedCookies: usedCookies)
                 .map { $0.resolvingMissingBrowser(cookiesEnabled: UserDefaults.standard.bool(forKey: "cookiesEnabled")) }
             : nil
+        let lastErrorReason = errorLog.lastError.map { PlaylistTracker.reason(from: $0) }
         let failedItems = jobs[i].playlist?.failed ?? []
         let action = QueueLogic.nextAction(
             FinishFacts(
@@ -622,7 +622,7 @@ final class DownloadManager: ObservableObject {
                 allFailuresTransient: failedItems.allSatisfy { DownloadJob.isTransient($0.detail) },
                 signInSeen: signInSeen, cookieBrowserAvailable: currentBrowser != nil,
                 needsCookies: usedCookies, autoRetried: jobs[i].autoRetried,
-                lastErrorTransient: DownloadJob.isTransient(lastErrorLine.map { PlaylistTracker.reason(from: $0) })))
+                lastErrorTransient: DownloadJob.isTransient(lastErrorReason)))
         switch action {
         case .cancelled:
             jobs[i].state = .cancelled
@@ -665,7 +665,7 @@ final class DownloadManager: ObservableObject {
         case .failed:
             jobs[i].state = .failed
             jobs[i].detail =
-                hint?.message ?? lastErrorLine.map { PlaylistTracker.reason(from: $0) } ?? "Failed (code \(code))"
+                hint?.message ?? lastErrorReason ?? "Failed (code \(code))"
             jobs[i].suggestsSignInSetting = hint?.needsSignInSetting ?? false
             jobs[i].suggestsFullDiskAccess = hint?.needsFullDiskAccess ?? false
             hadError = true
@@ -728,28 +728,5 @@ final class DownloadManager: ObservableObject {
         guard let r = line.range(of: marker) else { return nil }
         let rest = line[r.upperBound...].trimmingCharacters(in: .whitespaces)
         return rest.split(separator: " ").first.map(String.init)
-    }
-}
-
-/// Holds a look-up's stderr between threads. Kept in memory only, never written anywhere.
-/// Only ERROR and WARNING lines are kept, bounded separately (see `ErrorLog`).
-private final class ErrorCollector: @unchecked Sendable {
-    private let lock = NSLock()
-    private var value = ""
-
-    func set(_ data: Data) {
-        var log = ErrorLog()
-        for line in String(decoding: data, as: UTF8.self).split(whereSeparator: \.isNewline) {
-            log.consume(String(line))
-        }
-        lock.lock()
-        value = log.text
-        lock.unlock()
-    }
-
-    var text: String {
-        lock.lock()
-        defer { lock.unlock() }
-        return value
     }
 }

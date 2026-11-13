@@ -20,6 +20,15 @@ struct ErrorLog: Equatable {
     private(set) var errors: [String] = []
     private(set) var warnings: [String] = []
 
+    init() {}
+
+    /// The ERROR and WARNING lines of a whole output.
+    init(output: Data) {
+        for line in String(decoding: output, as: UTF8.self).split(whereSeparator: \.isNewline) {
+            consume(String(line))
+        }
+    }
+
     /// Keeps the line if it starts with ERROR or WARNING; anything else is ignored.
     mutating func consume(_ raw: String) {
         let line = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -88,8 +97,30 @@ enum QueueLogic {
         return f.exitCode == 0 ? .done : .failed
     }
 
-    /// Downloads and look-ups wait while a tool is being installed or updated.
-    static func mustWaitForInstall(_ installing: Set<Tool>) -> Bool { !installing.isEmpty }
+    /// How long a look-up may run before it is stopped, so a link that never answers can't hold up the
+    /// queue. With cookies, a Chromium browser's Keychain prompt may be waiting for the person, so allow
+    /// time to read and answer it; stopping it early would only lead to a second prompt at download time.
+    /// Two minutes is enough to read the prompt and type a password, without letting a site that hangs
+    /// hold up the whole queue for long.
+    nonisolated static func probeTimeout(useCookies: Bool) -> TimeInterval { useCookies ? 120 : 45 }
+}
+
+/// A string shared between threads (a look-up's error lines). In memory only.
+final class LockedText: @unchecked Sendable {
+    private let lock = NSLock()
+    private var text = ""
+
+    func set(_ s: String) {
+        lock.lock()
+        text = s
+        lock.unlock()
+    }
+
+    var value: String {
+        lock.lock()
+        defer { lock.unlock() }
+        return text
+    }
 }
 
 /// Collects pipe output as bytes and hands back only complete lines (yt-dlp separates progress
@@ -138,12 +169,16 @@ final class OutputPump: @unchecked Sendable {
     /// Call after `process.run()`. `process.terminationHandler` must not be in use elsewhere.
     func start(reading handle: FileHandle, process: Process) {
         // If something the tool spawned keeps the pipe open after it exits, do not wait for it forever.
-        process.terminationHandler = { [self] p in
-            DispatchQueue.global().asyncAfter(deadline: .now() + 2) { self.sendExit(p.terminationStatus) }
-        }
+        process.terminationHandler = { [self] p in exitSoon(p) }
+        // A process that already ended before the handler was set never calls it, so check once more.
+        // (Both may fire; only the first exit is sent.)
+        if !process.isRunning { exitSoon(process) }
         let thread = Thread { [self] in
             let buffer = LineBuffer()
-            while let data = (try? handle.read(upToCount: 65_536)) ?? nil, !data.isEmpty {
+            var chunk = [UInt8](repeating: 0, count: 65_536)  // reused for every read
+            // read(2) returns as soon as any output is there, so progress lines arrive live.
+            // (FileHandle.read(upToCount:) waits until the whole count or the end of the output.)
+            while let data = Self.readAvailable(handle, into: &chunk), !data.isEmpty {
                 for line in buffer.append(data) { continuation.yield(.line(line)) }
             }
             for line in buffer.flush() { continuation.yield(.line(line)) }
@@ -152,6 +187,22 @@ final class OutputPump: @unchecked Sendable {
         }
         thread.stackSize = 1 << 20
         thread.start()
+    }
+
+    /// Sends the exit a little after the process ended, giving the reader time to deliver the last lines.
+    private func exitSoon(_ process: Process) {
+        DispatchQueue.global().asyncAfter(deadline: .now() + 2) { self.sendExit(process.terminationStatus) }
+    }
+
+    /// What the pipe has now (waiting for at least one byte), read into `buffer`; empty at the end of the
+    /// output, nil on error.
+    static func readAvailable(_ handle: FileHandle, into buffer: inout [UInt8]) -> Data? {
+        let capacity = buffer.count
+        while true {
+            let count = buffer.withUnsafeMutableBytes { Darwin.read(handle.fileDescriptor, $0.baseAddress, capacity) }
+            if count >= 0 { return Data(buffer[0..<count]) }
+            if errno != EINTR { return nil }
+        }
     }
 
     private func sendExit(_ code: Int32) {

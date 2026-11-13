@@ -22,7 +22,9 @@ struct JobOptions: Equatable {
     /// Prefer H.264 video so files play everywhere.
     var compatibilityH264 = false
     var extraArguments: [String] = []
-    /// deno (or another JS runtime) for YouTube's signature challenges; nil = none found.
+    /// deno (or another JS runtime) for YouTube's signature challenges; nil = none, or the yt-dlp is too old.
+    /// Not captured when a link is added: it depends on the yt-dlp that actually runs, so the look-up and
+    /// the download fill it in just before they start (`DependencyManager.jsRuntimePath(forYtDlpAt:)`).
     var jsRuntimePath: String? = nil
 
     static func current(_ defaults: UserDefaults = .standard) -> JobOptions {
@@ -38,9 +40,7 @@ struct JobOptions: Equatable {
             folder: URL(fileURLWithPath: defaults.string(forKey: "destinationFolder") ?? downloads),
             cookiesBrowser: CookieBrowser.current(defaults),
             compatibilityH264: defaults.bool(forKey: "compatibilityH264"),
-            extraArguments: ExtraArguments.parse(defaults.string(forKey: "extraArguments") ?? ""),
-            jsRuntimePath: DependencyManager.supportsJsRuntimes(defaults.string(forKey: DependencyManager.ytDlpVersionKey))
-                ? DependencyManager.locate(.deno) : nil
+            extraArguments: ExtraArguments.parse(defaults.string(forKey: "extraArguments") ?? "")
         )
     }
 }

@@ -169,6 +169,47 @@ enum ExtraArguments {
         return table
     }()
 
+    // MARK: Look-up
+
+    /// Options that change how a site is reached, so the quick title look-up sees what the download
+    /// will see. Everything else is left to the download: filters (`--match-filters`) would make the
+    /// look-up list nothing, waits (`--wait-for-video`, `--sleep-requests`) would run into its time
+    /// limit, and a format choice (`-f`) the link can't satisfy would make it fail.
+    nonisolated static let lookupNames: Set<String> = [
+        "--proxy", "--geo-verification-proxy", "--xff", "--source-address", "--socket-timeout",
+        "-4", "--force-ipv4", "-6", "--force-ipv6", "--extractor-retries", "--extractor-args",
+    ]
+
+    /// The part of already-checked extra arguments that also applies to the look-up, in order.
+    nonisolated static func forLookup(_ tokens: [String]) -> [String] {
+        var kept: [String] = []
+        var i = 0
+        while i < tokens.count {
+            let token = tokens[i]
+            i += 1
+            if token.hasPrefix("--") {
+                let parts = token.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+                let name = String(parts[0])
+                // a value given as the next token belongs to this option
+                let separateValue = parts.count == 1 && (longOptions[name]?.takesValue ?? false) && i < tokens.count
+                let value = separateValue ? tokens[i] : nil
+                if separateValue { i += 1 }
+                if lookupNames.contains(name) { kept += [token] + (value.map { [$0] } ?? []) }
+            } else if token.hasPrefix("-"), token.count > 1 {
+                // a bundle such as -4x: keep the letters that apply, skip a value that belongs to the bundle
+                for (index, letter) in token.dropFirst().enumerated() {
+                    let option = shortOptions[letter]
+                    if option?.takesValue == true {
+                        if index == token.count - 2, i < tokens.count { i += 1 }  // value is the next token
+                        break
+                    }
+                    if lookupNames.contains("-\(letter)") { kept.append("-\(letter)") }
+                }
+            }
+        }
+        return kept
+    }
+
     /// The names the Settings footnote and the tests can show.
     nonisolated static var allowedNames: [String] { allowed.flatMap(\.names).sorted() }
 

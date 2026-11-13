@@ -15,7 +15,8 @@ enum YtDlpArguments {
     }
 
     /// Order: format args (download only), extra args, cookie flags, Downer's own flags (downloads also
-    /// cancel info-json writing), the link.
+    /// cancel info-json writing), the link. The look-up only gets the extra args that change how a site
+    /// is reached (see `ExtraArguments.forLookup`); filters, waits and format choices are for the download.
     ///
     /// yt-dlp also reads config files (~/.config/yt-dlp/config, ~/yt-dlp.conf, ...) that could turn
     /// cookies on whatever Sign-in says. Downer's flags come last, so they win: with Sign-in off,
@@ -25,8 +26,12 @@ enum YtDlpArguments {
         for options: JobOptions, purpose: Purpose, useCookies: Bool, url: String
     ) -> [String] {
         var args: [String] = []
-        if case .download = purpose { args += formatArguments(for: options) }
-        args += options.extraArguments
+        if case .download = purpose {
+            args += formatArguments(for: options)
+            args += options.extraArguments
+        } else {
+            args += ExtraArguments.forLookup(options.extraArguments)
+        }
         args.append("--no-cookies")
         if useCookies, let browser = options.cookiesBrowser {
             args += ["--cookies-from-browser", browser.ytDlpName]
@@ -42,9 +47,13 @@ enum YtDlpArguments {
             // A config file's --write-info-json / --embed-info-json would write the `cookies` field of the
             // info dict to disk when Sign-in is on, so cancel them for every download.
             args += ["--no-write-info-json", "--no-embed-info-json"]
-            // yt-dlp runs in a private empty folder (see RunDirectory), so the destination is spelled out.
-            // The file name is yt-dlp's own default, so nothing changes for the person.
+            // yt-dlp runs in a private empty folder (see RunDirectory), so every output template is an
+            // absolute path in the destination: a relative one would land in the folder that is deleted.
+            // Thumbnails, subtitles and playlist files follow the default template; only chapters
+            // (--split-chapters) have a template of their own. The names are yt-dlp's own defaults.
+            // (Not `-P`: yt-dlp trims spaces from it, which would change a folder like "Videos ".)
             args += ["-o", outputTemplate(folder: outputFolder)]
+            args += ["-o", "chapter:" + outputTemplate(folder: outputFolder, file: chapterFileTemplate)]
             args += ["--print-to-file", "after_move:filepath", pathFile]
             args += ["--newline", "--ffmpeg-location", ffmpegDirectory]
             args += items(only)
@@ -53,14 +62,16 @@ enum YtDlpArguments {
         return args
     }
 
-    /// yt-dlp's default name (`%(title)s [%(id)s].%(ext)s`) inside the destination folder. A `%` in the
-    /// folder's path would start a template field, so it is doubled.
-    nonisolated static func outputTemplate(folder: String) -> String {
+    /// `file` (an output template) inside the destination folder. A `%` in the folder's path would start
+    /// a template field, so it is doubled.
+    nonisolated static func outputTemplate(folder: String, file: String = defaultFileTemplate) -> String {
         let base = folder.hasSuffix("/") ? String(folder.dropLast()) : folder
-        return base.replacingOccurrences(of: "%", with: "%%") + "/" + defaultFileTemplate
+        return base.replacingOccurrences(of: "%", with: "%%") + "/" + file
     }
 
+    /// yt-dlp's default names (`DEFAULT_OUTTMPL` in yt-dlp's utils).
     nonisolated static let defaultFileTemplate = "%(title)s [%(id)s].%(ext)s"
+    nonisolated static let chapterFileTemplate = "%(title)s - %(section_number)03d %(section_title)s [%(id)s].%(ext)s"
 
     nonisolated private static func items(_ only: [Int]?) -> [String] {
         only.map { ["--playlist-items", $0.map(String.init).joined(separator: ",")] } ?? []

@@ -109,9 +109,9 @@ struct FinishActionTests {
         #expect(actions == [.retryWithCookies, .retrySingle, .failed])
     }
 
-    @Test func installGate() {
-        #expect(!QueueLogic.mustWaitForInstall([]))
-        #expect(QueueLogic.mustWaitForInstall([.ytDlp]))
+    @Test func cookieLookupLeavesTimeForTheKeychainPrompt() {
+        #expect(QueueLogic.probeTimeout(useCookies: false) == 45)
+        #expect(QueueLogic.probeTimeout(useCookies: true) >= 120)
     }
 }
 
@@ -149,22 +149,121 @@ struct SiteWordingTests {
         for hint in all { #expect(hint.message.count <= 70, "\(hint.message)") }
     }
 
+    func log(_ lines: String...) -> ErrorLog {
+        var log = ErrorLog()
+        for line in lines { log.consume(line) }
+        return log
+    }
+
     @Test func displayFollowsTheLastErrorButCookieProblemsWin() {
-        let text = "ERROR: [youtube] a: Sign in to confirm you're not a bot\nERROR: [youtube] b: Video unavailable"
-        let h = ErrorHint.classifyForDisplay(
-            errorText: text, lastError: "ERROR: [youtube] b: Video unavailable", cookiesBrowser: nil, usedCookies: false)
-        #expect(h == .unavailable)
+        let mixed = log("ERROR: [youtube] a: Sign in to confirm you're not a bot", "ERROR: [youtube] b: Video unavailable")
+        #expect(ErrorHint.forFailedRun(mixed, cookiesBrowser: nil, usedCookies: false) == .unavailable)
         // the trigger still sees the sign-in error anywhere in the run
-        #expect(ErrorHint.classify(text, cookiesBrowser: nil, usedCookies: false)?.isSignIn == true)
+        #expect(ErrorHint.requiresSignIn(mixed))
 
-        let cookie = "WARNING: failed to decrypt cookie\nERROR: [youtube] b: Video unavailable"
-        #expect(ErrorHint.classifyForDisplay(
-            errorText: cookie, lastError: "ERROR: [youtube] b: Video unavailable",
-            cookiesBrowser: .chrome, usedCookies: true) == .keychain(browser: .chrome))
+        let cookie = log("WARNING: failed to decrypt cookie", "ERROR: [youtube] b: Video unavailable")
+        #expect(ErrorHint.forFailedRun(cookie, cookiesBrowser: .chrome, usedCookies: true) == .keychain(browser: .chrome))
 
-        // unknown last line falls back to the whole run
-        #expect(ErrorHint.classifyForDisplay(
-            errorText: text, lastError: "ERROR: odd", cookiesBrowser: nil, usedCookies: false)?.isSignIn == true)
+        // an unknown last line falls back to the other ERROR lines
+        let odd = log("ERROR: [youtube] a: Sign in to confirm you're not a bot", "ERROR: odd")
+        #expect(ErrorHint.forFailedRun(odd, cookiesBrowser: nil, usedCookies: false)
+            == .signIn(browser: nil, usedCookies: false, youtube: true))
+    }
+}
+
+/// The cookie retry (and its Keychain prompt) only follows a real sign-in wall.
+struct SignInTriggerTests {
+    func log(_ lines: String...) -> ErrorLog {
+        var log = ErrorLog()
+        for line in lines { log.consume(line) }
+        return log
+    }
+
+    @Test func aSignInErrorTriggersIt() {
+        #expect(ErrorHint.requiresSignIn(log("ERROR: [youtube] x: Sign in to confirm you're not a bot")))
+        #expect(ErrorHint.requiresSignIn(log("ERROR: [youtube] x: Sign in to confirm your age")))
+        #expect(ErrorHint.requiresSignIn(
+            log("ERROR: [Instagram] x: login required. Use --cookies-from-browser or --cookies")))
+    }
+
+    @Test func aSignInWarningNextToAnUnrelatedFailureDoesNot() {
+        for error in [
+            "ERROR: [youtube] x: Unable to download webpage: HTTP Error 503: Service Unavailable",
+            "ERROR: [youtube] x: Video unavailable",
+            "ERROR: unable to download video data: <urlopen error timed out>",
+            "ERROR: Postprocessing: Conversion failed!",
+        ] {
+            let l = log("WARNING: [youtube] y: Sign in to confirm your age. Use --cookies-from-browser", error)
+            #expect(!ErrorHint.requiresSignIn(l), "\(error)")
+            // and the hint does not tell the person to turn on Sign-in either
+            #expect(ErrorHint.forFailedRun(l, cookiesBrowser: .chrome, usedCookies: false)?.isSignIn != true, "\(error)")
+            #expect(ErrorHint.forFailedRun(l, cookiesBrowser: nil, usedCookies: false)?.needsSignInSetting != true)
+        }
+    }
+
+    /// "Requested format is not available" is also what the person's own `-f` gives when a video can't
+    /// satisfy it, so a sign-in warning next to it is no reason to use cookies.
+    @Test func aSignInWarningNextToAFormatErrorDoesNot() {
+        let l = log(
+            "WARNING: [youtube] x: Sign in to confirm you're not a bot. Use --cookies-from-browser",
+            "ERROR: [youtube] x: Requested format is not available. Use --list-formats for a list of available formats")
+        #expect(!ErrorHint.requiresSignIn(l))
+        #expect(ErrorHint.forFailedRun(l, cookiesBrowser: .firefox, usedCookies: false) == .outdated)
+    }
+
+    /// One item hit an age check, but the run's last error says yt-dlp is out of date: say that.
+    @Test func anOutdatedLastErrorIsNotRelabelledAsSignIn() {
+        let l = log(
+            "ERROR: [youtube] a: Sign in to confirm your age",
+            "ERROR: [youtube] b: n challenge solving failed")
+        #expect(ErrorHint.requiresSignIn(l))  // the age-checked item still gets the cookie retry
+        #expect(ErrorHint.forFailedRun(l, cookiesBrowser: nil, usedCookies: false) == .outdated)
+    }
+
+    @Test func warningsAloneNeverTriggerIt() {
+        #expect(!ErrorHint.requiresSignIn(log("WARNING: [youtube] x: Sign in to confirm you're not a bot")))
+        #expect(!ErrorHint.requiresSignIn(log()))
+    }
+
+    @Test func aSignInWarningDoesNotHideAnotherWarningsHint() {
+        let l = log(
+            "WARNING: [youtube] x: Sign in to confirm your age",
+            "WARNING: [youtube] x: n challenge solving failed: Some formats may be missing",
+            "ERROR: something odd")
+        #expect(ErrorHint.forFailedRun(l, cookiesBrowser: nil, usedCookies: false) == .outdated)
+    }
+
+    @Test func errorLogReadsAWholeOutput() {
+        let l = ErrorLog(output: Data("[info] x\nWARNING: w\r\nERROR: e\nchatter\n".utf8))
+        #expect(l.errors == ["ERROR: e"])
+        #expect(l.warnings == ["WARNING: w"])
+    }
+}
+
+@MainActor
+struct ToolProcessTests {
+    /// brew (or anything else) can leave a helper running that still holds the output pipe. The run must
+    /// still finish, or `installing` never empties and every download waits forever.
+    @Test(.timeLimit(.minutes(1))) func aHelperHoldingThePipeCannotHangTheRun() async throws {
+        let start = Date()
+        let result = try await DependencyManager.shared.run("/bin/sh", ["-c", "sleep 30 & echo started; exit 0"])
+        #expect(result.status == 0)
+        #expect(result.output.contains("started"))
+        #expect(Date().timeIntervalSince(start) < 15)
+    }
+
+    @Test func outputAndStatusAreCollected() async throws {
+        let result = try await DependencyManager.shared.run(
+            "/bin/sh", ["-c", "echo one; echo two >&2; printf 'Error: last'; exit 4"])
+        #expect(result.status == 4)
+        #expect(result.output.split(separator: "\n").map(String.init) == ["one", "two", "Error: last"]
+            || Set(result.output.split(separator: "\n").map(String.init)) == ["one", "two", "Error: last"])
+    }
+
+    @Test func aMissingProgramThrows() async {
+        await #expect(throws: (any Error).self) {
+            _ = try await DependencyManager.shared.run("/nonexistent/tool", [])
+        }
     }
 }
 
@@ -220,6 +319,56 @@ struct OutputPumpTests {
         var log = ErrorLog()
         for l in lines { log.consume(l) }
         #expect(ErrorHint.classify(log.text, cookiesBrowser: .chrome, usedCookies: false)?.isSignIn == true)
+    }
+
+    /// Progress must show while a download runs, not in big batches: a line arrives as soon as it is
+    /// written, long before the process ends or 64 KB pile up.
+    @Test(.timeLimit(.minutes(1))) func linesArriveLiveNotInBatches() async {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/bin/sh")
+        proc.arguments = ["-c", "echo '[download]   1.0% of 10MiB'; sleep 4; echo done"]
+        let pipe = Pipe()
+        proc.standardOutput = pipe
+        let pump = OutputPump()
+        let start = Date()
+        try? proc.run()
+        try? pipe.fileHandleForWriting.close()
+        pump.start(reading: pipe.fileHandleForReading, process: proc)
+        var firstLineAfter: TimeInterval?
+        var events: [OutputPump.Event] = []
+        for await e in pump.events {
+            if firstLineAfter == nil, case .line = e { firstLineAfter = Date().timeIntervalSince(start) }
+            events.append(e)
+        }
+        #expect((firstLineAfter ?? 99) < 2)
+        #expect(events == [.line("[download]   1.0% of 10MiB"), .line("done"), .exit(0)])
+    }
+
+    @Test func readAvailableReturnsWhatIsThere() throws {
+        let pipe = Pipe()
+        pipe.fileHandleForWriting.write(Data("abc".utf8))
+        var buffer = [UInt8](repeating: 0, count: 16)
+        #expect(OutputPump.readAvailable(pipe.fileHandleForReading, into: &buffer) == Data("abc".utf8))
+        try pipe.fileHandleForWriting.close()
+        #expect(OutputPump.readAvailable(pipe.fileHandleForReading, into: &buffer) == Data())
+    }
+
+    /// A process that ends before the reader is set up still gets its exit reported, even when a
+    /// helper it started keeps the output open.
+    @Test(.timeLimit(.minutes(1))) func anEarlyExitWithAHeldPipeStillEnds() async throws {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/bin/sh")
+        proc.arguments = ["-c", "sleep 30 & echo early"]
+        let pipe = Pipe()
+        proc.standardOutput = pipe
+        try proc.run()
+        try? pipe.fileHandleForWriting.close()
+        while proc.isRunning { try await Task.sleep(for: .milliseconds(20)) }  // ended before start()
+        let pump = OutputPump()
+        pump.start(reading: pipe.fileHandleForReading, process: proc)
+        var events: [OutputPump.Event] = []
+        for await e in pump.events { events.append(e) }
+        #expect(events == [.line("early"), .exit(0)])
     }
 
     @Test func exitCodeIsReported() async {
