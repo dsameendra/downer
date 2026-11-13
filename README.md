@@ -12,6 +12,15 @@ Built for macOS 26 with Liquid Glass. Works on macOS 14 and later.
 
 </div>
 
+## What's new in 2.1.0
+
+- **Sign in for videos that need it.** Optional browser sign-in for age-restricted and bot-checked videos. Off by default. See [Signing in](#signing-in-for-age-restricted-or-bot-checked-videos).
+- **Best compatibility (H.264).** One switch for files that play in QuickTime and everywhere else. See [Best compatibility](#best-compatibility-h264).
+- **Extra yt-dlp arguments.** Add your own options to every download, with unsafe ones refused.
+- **deno, recommended for YouTube.** Installed and updated from Settings, and passed to `yt-dlp` when your `yt-dlp` is new enough to use it.
+- **Update buttons** for `yt-dlp`, `ffmpeg` and `deno`, and a once-a-day check for new Downer releases.
+- **Clearer errors** that say what to do next.
+
 ## What's new in 2.0.3
 
 - The panel at the bottom now grows to fit **Show in Finder** after a download, instead of letting it spill out.
@@ -86,10 +95,45 @@ Built for macOS 26 with Liquid Glass. Works on macOS 14 and later.
 
 - **Appearance:** Device, Light or Dark, and an optional background glow.
 - **Global shortcut:** record any key combination.
-- **Requirements:** shows whether `yt-dlp`, `ffmpeg` and `ffprobe` are installed, and their versions. Missing tools have an **Install** button.
+- **Sign-in (browser cookies):** optional browser sign-in, described [above](#signing-in-for-age-restricted-or-bot-checked-videos).
+- **Advanced:** extra `yt-dlp` arguments.
+- **Updates:** **Check for updates automatically** checks GitHub for a new Downer release at most once a day, and can be turned off. **Check now** does it on demand. Downer only contacts GitHub, and never downloads or installs anything by itself: **View release** opens the page.
+- **Requirements:** shows whether `yt-dlp`, `ffmpeg`, `ffprobe` and `deno` are installed, and their versions. Missing tools have an **Install** button, and installed ones an **Update** button (tools installed another way show "Manual").
+  - `deno` is a JavaScript runtime, **recommended for YouTube**. Without it some YouTube videos may fail or offer fewer formats. Downer passes it to `yt-dlp` automatically, but only when your `yt-dlp` is 2025.11.12 or newer, so press **Update** on `yt-dlp` if needed.
   - With Homebrew installed, Downer runs `brew install` for you.
-  - Without Homebrew, `yt-dlp` is downloaded from its official release into Downer's own folder. `ffmpeg` needs Homebrew, and Downer will tell you so.
+  - Without Homebrew, `yt-dlp` and `deno` are downloaded from its official release into Downer's own folder. `ffmpeg` needs Homebrew, and Downer will tell you so.
   - Already installed somewhere else? Use **Browse…** to point Downer at it.
+
+### Signing in for age-restricted or bot-checked videos
+
+Some videos need a signed-in session, for example YouTube's age check and bot check. Downer can let `yt-dlp` use your browser's sign-in for those.
+
+- It is **off by default**. Turn it on in **Settings → Sign-in (browser cookies)** (**Sign in with a browser**), pick a browser, and read the consent screen (also behind **What does this do?**).
+- Downer **always tries without cookies first**. The chosen browser's cookies are only used when a site says sign-in is required.
+- `yt-dlp` reads the browser's cookie store on your Mac, and the cookies are only sent to the site you are downloading from.
+- Downer never saves, copies, uploads or logs your cookies, and never sees your password.
+- macOS may ask for permission, depending on the browser:
+  - **Chrome, Brave, Edge, Chromium, Vivaldi, Opera:** macOS asks once to let Downer use the browser's "Safe Storage" item from your Keychain, which is how the cookies are decrypted.
+  - **Safari:** its cookies are protected, so you must grant Downer Full Disk Access yourself in System Settings → Privacy & Security. Downer won't ask for it.
+  - **Firefox:** nothing extra.
+- Using your account with a downloader can lead YouTube to rate-limit or flag it. A secondary account is safer.
+- Turn it off any time in the same place. It applies from the next download.
+
+### Best compatibility (H.264)
+
+Turn on **Best compatibility (H.264)** under the pickers to prefer H.264 video (and AAC audio) in an MP4. These files play in QuickTime, on iPhones and almost anywhere else. It fixes the "audio but no picture" problem in QuickTime, which happens when a YouTube MP4 holds AV1 video or Opus audio that QuickTime cannot show.
+
+- The container is fixed to MP4 while it is on.
+- On YouTube, H.264 stops at 1080p, so higher resolutions are capped (Downer says so).
+- Files are usually larger than the AV1 or VP9 alternatives.
+
+### Extra yt-dlp arguments
+
+**Settings → Advanced → Extra yt-dlp arguments** takes any options `yt-dlp` accepts, for example `--limit-rate 2M`, and adds them to every download.
+
+- They come **after** Downer's own format options, so they can override them.
+- Quotes and backslashes work as in a shell.
+- Arguments that would break Downer or put you at risk are refused, with the reason shown: ones Downer manages (output names and folders, progress, quiet mode, the ffmpeg location), ones that stop anything downloading (`--simulate`, `--skip-download`, the JSON dumps), ones that run commands (`--exec`), ones that touch cookies (use the Sign-in setting instead, and `--verbose` or `--print-traffic`, which can print them), and `--config-locations`.
 
 ## Screenshots
 
@@ -151,14 +195,16 @@ The first time Downer saves into a protected folder such as Downloads, macOS ask
 | A video failed with an HTTP error | Downer retries these once automatically. If it still fails, press **Retry** on the row. |
 | A video says "unavailable" | The video is private, removed or restricted in your region. Retrying will not help. |
 | Nothing is saved | Check the **Save to** folder exists, and that Downer has permission to write to it. |
-| Downloads suddenly stop working for a site | Update the tool: `brew upgrade yt-dlp` (sites change often). |
+| Downloads suddenly stop working for a site | Press **Update** next to `yt-dlp` in Settings → Requirements (sites change often). |
+| YouTube says to sign in or confirm you are not a bot | Turn on **Sign-in (browser cookies)** in Settings, or try again later. |
+| A MP4 plays sound but shows no picture in QuickTime | Turn on **Best compatibility (H.264)**. |
 
 ## Building from source
 
 ### Requirements
 
 - macOS 14 or later to run. Xcode 26 or later to build, so the Liquid Glass APIs are available.
-- `yt-dlp`, `ffmpeg` and `ffprobe` installed anywhere on disk, or installed from Downer's Settings.
+- `yt-dlp`, `ffmpeg` and `ffprobe` installed anywhere on disk, or installed from Downer's Settings. `deno` is recommended for YouTube.
 
 ### Steps
 
