@@ -338,11 +338,15 @@ struct SettingsView: View {
     private var requirementsFooter: some View {
         let text: String? = {
             if let failure = deps.failure { return failure }
-            if !deps.installing.isEmpty { return deps.log.isEmpty ? "Installing…" : deps.log }
+            if !deps.installing.isEmpty { return deps.log.isEmpty ? "Working…" : deps.log }
+            if let notice = deps.notice { return notice }
             if deps.brewPath == nil && !deps.missing.isEmpty {
                 return deps.missing.contains(where: { $0 != .ytDlp })
                     ? "ffmpeg needs Homebrew. yt-dlp can be installed without it."
                     : nil
+            }
+            if deps.recommendedMissing.contains(.deno) {
+                return "deno is recommended: YouTube downloads can miss formats without it."
             }
             return nil
         }()
@@ -401,6 +405,15 @@ struct SettingsView: View {
                     .frame(width: 70)
                     .transition(.opacity)
             } else if installed {
+                if case .manual = deps.updateMethod(for: tool) {
+                    Text("Manual")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .help("Installed manually. Update it the way you installed it.")
+                } else {
+                    Button("Update") { deps.update(tool) }
+                        .buttonStyle(PillButtonStyle())
+                }
                 Button("Browse…") { choosePath(for: binding) }
                     .buttonStyle(PillButtonStyle())
             } else {
@@ -423,7 +436,7 @@ struct SettingsView: View {
     }
 
     private func statusText(_ tool: Tool, installed: Bool, version: String?, busy: Bool) -> String {
-        if busy { return "Installing…" }
+        if busy { return "Working…" }
         if !installed {
             if !deps.hasCheckedOnce { return "Checking…" }
             return tool.isRequired ? "Not found" : "Recommended"
