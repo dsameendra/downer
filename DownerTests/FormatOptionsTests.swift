@@ -104,73 +104,108 @@ struct FormatOptionsTests {
         #expect(tokens("--x \"oops") == nil)
     }
 
-    // MARK: validate
+    // MARK: validate (allowlist)
 
     private func refused(_ s: String) -> Bool {
         guard let t = tokens(s) else { return true }
         return ExtraArguments.validate(t) != nil
     }
 
-    @Test func refusesManagedFlags() {
+    /// Everything the security review found, plus the options that must never get through.
+    @Test func refusesEveryReviewedBypass() {
         for s in [
-            "-o x", "--output x", "--output=x", "-ofile", "-O x", "--print x", "--print-to-file a b",
-            "-q", "--quiet", "--progress-template x", "--no-newline", "--no-progress", "-s",
-            "--simulate", "--skip-download", "-j", "--dump-json", "-J", "--dump-single-json",
-            "--ffmpeg-location=/x", "--paths home:/x", "-P /x",
+            "--alias x ' --cookies /tmp/c.txt' --x", "--ali x ' -v'", "' --cookies' /tmp/c.txt",
+            #"--use-postprocessor "Exec:echo hi;exec_cmd=touch /tmp/p""#, "--use-postprocessors x",
+            "--update-to x", "-U", "--update", "--no-update", "--write-info-json", "--embed-info-json",
+            "--clean-info-json", "--no-clean-info-json", "--load-info-json x", "--write-comments", "--get-comments",
+            "--downloader curl", "--external-downloader curl", "--downloader-args x", "--external-downloader-args x",
+            #"--ppa "ffmpeg:-report""#, "--postprocessor-args x", "--js-runtimes deno:/tmp/x", "--remote-components x",
+            "--plugin-dirs /tmp", "--no-plugin-dirs", "-I 5-8", "--playlist-items 5-8", "--playlist-start 2",
+            "--playlist-end 3", "--playlist-reverse", "--playlist-random", "--lazy-playlist", "https://x.com",
+            "--cookies-from chrome", "--verb", "--cookies x", "--cookies=x", "--cookies-from-browser chrome",
+            "--no-cookies", "--no-cookies-from-browser", "--no-check-certificates", "--legacy-server-connect",
+            "--client-certificate x", "--client-certificate-key x", "--enable-file-urls", "-a /etc/hosts",
+            "--batch-file x", "--cache-dir /tmp", "--rm-cache-dir", "--config-locations x", "--config-location x",
+            "--ignore-config", "--no-config", "--netrc", "--netrc-location x", "--netrc-cmd x", "-u bob", "-p x",
+            "--username bob", "--password x", "--twofactor 1", "-2 1", "--video-password x", "-o x", "-O x", "-P /x",
+            "--output x", "--paths x", "--print x", "--print-to-file a b", "-q", "-v", "--quiet", "--verbose",
+            "--print-traffic", "--dump-pages", "--write-pages", "-s", "-j", "-J", "-F", "--list-formats",
+            "--list-subs", "-h", "--help", "--version", "--simulate", "--skip-download", "--ffmpeg-location /x",
+            "--progress-template x", "--newline", "--no-progress", "--parse-metadata a:b", "--replace-in-metadata a b c",
+            "--sponsorblock-api http://x", "--download-archive x", "--write-link", "--write-url-link",
+            "--write-description", "--exec x", "--exec-before-download x", "--add-headers 'Cookie: a=b'",
+            "--extractor-args youtubepot-bgutilscript:script_path=/tmp/x", "--extractor-args youtube:po_token=abc",
+            "--extractor-args youtube:innertube_host=evil.example", "--extractor-args youtube:player_client=/tmp/x",
+            "--extractor-args nocolon", "--",
         ] { #expect(refused(s), "\(s)") }
     }
 
-    @Test func refusesCookieAndLeakyAndExecFlags() {
+    @Test func refusesAbbreviationsAndBundlesWithRefusedLetters() {
         for s in [
-            "--cookies=x", "--cookies x", "--cookies-from-browser chrome", "--no-cookies",
-            "--no-cookies-from-browser", "--print-traffic", "--dump-pages", "--write-pages", "-v",
-            "--verbose", "--exec", "--exec=rm", "--exec-before-download x", "--netrc-cmd x",
-            "--config-locations x",
+            "--cookies-from-b chrome", "--cookies-from=chrome", "--verb", "--print-tr", "--exec-b x", "--cook x",
+            "--limit x", "--embed-sub", "--no-mtim", "-4v", "-xo", "-xofile", "-qs", "-sv", "-4vq", "-iv",
         ] { #expect(refused(s), "\(s)") }
-    }
-
-    @Test func refusesAbbreviatedLongFlags() {
-        for s in [
-            "--cookies-from-b chrome", "--cookies-from=chrome", "--cookies-from-browser=chrome",
-            "--verb", "--print-tr", "--exec-b x", "--exec-before x", "--cook x", "--dump-p", "--write-p",
-        ] { #expect(refused(s), "\(s)") }
-    }
-
-    @Test func refusesBundledShortFlags() {
-        for s in ["-4v", "-xo", "-xofile", "-qs", "-sv", "-4vq", "-iv"] { #expect(refused(s), "\(s)") }
     }
 
     @Test func refusesLoneDoubleDash() {
-        #expect(refused("--"))
         #expect(ExtraArguments.validate(["--"])?.reason.contains("-- would stop Downer") == true)
         #expect(ExtraArguments.parse("--limit-rate 2M -- -o x").isEmpty)
     }
 
-    @Test func bypassStringsNeverParse() {
-        for s in ["--cookies-from-b chrome", "--verb", "--print-tr", "-4v", "-xofile", "--"] {
-            #expect(ExtraArguments.parse(s).isEmpty, "\(s)")
-        }
+    @Test func allowsCommonOptions() {
+        for s in [
+            "-t mp4", "-t aac", "-t sleep", "--limit-rate 2M", "-r 2M", "-S \"-vcodec\"", "-S res:720", "-N4", "-N 4",
+            "-f bestvideo+bestaudio", "-fbestvideo[height<=720]", "--embed-subs --sub-langs en", "--sub-langs=en.*,ja",
+            "--proxy socks5://127.0.0.1:1080", "-4", "-4x", "-x --audio-format mp3", "--no-mtime", "--embed-thumbnail",
+            "--embed-metadata", "--add-metadata", "--sponsorblock-remove sponsor,selfpromo", "--retries infinite",
+            "--download-sections \"*10:00-12:00\"", "--match-filters \"!is_live\"", "--no-overwrites", "-w",
+            "--extractor-args youtube:player_client=web,tv", "--concurrent-fragments 4", "-i", "--merge-output-format mkv",
+        ] { #expect(!refused(s), "\(s)") }
     }
 
-    @Test func allowsValuesAttachedToValueTakingShorts() {
-        // the rest of the bundle is the value, not more flags
-        for s in ["-fbestvideo", "-N4", "-r2M", "-t mp4", "-fbestvideo[height<=720]", "-4", "-x", "--netrc", "--progress", "--no-mtime"] {
-            #expect(!refused(s), "\(s)")
-        }
+    @Test func aValueMayStartWithADash() {
+        #expect(ExtraArguments.parse("-S -vcodec") == ["-S", "-vcodec"])
+        #expect(ExtraArguments.parse("-f -x") == ["-f", "-x"])  // a value, not a flag
+    }
+
+    @Test func valuesAreChecked() {
+        #expect(refused("-t ../x"))
+        #expect(refused("-t mp5"))
+        #expect(refused("-tmp4 x"))  // "mp4" attached, then a stray word
+        #expect(!refused("-tmp4"))
+        #expect(refused("--limit-rate"))  // missing value
+        #expect(refused("--no-mtime=1"))  // a flag with a value
+    }
+
+    @Test func strayWordsAreRefused() {
+        let reason = ExtraArguments.validate(tokens("-t mp4 https://x.com") ?? [])?.reason
+        #expect(reason?.contains("Links go in the link field") == true)
+        #expect(refused("hello"))
+    }
+
+    @Test func smartQuotesAndDashesAreNormalised() {
+        #expect(ExtraArguments.parse("\u{201C}-S\u{201D} \u{201C}res:720\u{201D}") == ["-S", "res:720"])
+        #expect(ExtraArguments.parse("-f \u{2018}best\u{2019}") == ["-f", "best"])
+        #expect(ExtraArguments.parse("\u{2014}limit-rate 2M") == ["--limit-rate", "2M"])
+        #expect(ExtraArguments.parse("\u{2013}N 4") == ["-N", "4"])
+        // a normalised dash does not bypass anything
+        #expect(ExtraArguments.parse("\u{2014}cookies x").isEmpty)
+        #expect(ExtraArguments.parse("\u{2014}alias a b").isEmpty)
+    }
+
+    @Test func tokensAreTrimmed() {
+        #expect(ExtraArguments.validate([" --cookies", "x"]) != nil)
+        #expect(ExtraArguments.validate(["\t--exec"]) != nil)
+        #expect(ExtraArguments.validate([" --no-mtime "]) == nil)
     }
 
     @Test func refusalsHaveReasons() {
-        let r = ExtraArguments.validate(["--print-traffic"])?.reason
-        #expect(r?.contains("cookies") == true)
-        #expect(ExtraArguments.validate(["--cookies"])?.reason.contains("Sign-in") == true)
-        #expect(ExtraArguments.validate(["-o"])?.reason.contains("managed by Downer") == true)
-    }
-
-    @Test func allowsOrdinaryFlags() {
-        for s in [
-            "-t mp4", "--limit-rate 2M", "-N 4", "--embed-thumbnail", "--ignore-config",
-            "--user-agent 'x -o y'", "-f bestvideo", "--sleep-interval 3",
-        ] { #expect(!refused(s), "\(s)") }
+        #expect(ExtraArguments.validate(["--cookies", "x"])?.reason.contains("Sign-in") == true)
+        #expect(ExtraArguments.validate(["-o", "x"])?.reason.contains("managed by Downer") == true)
+        #expect(ExtraArguments.validate(["--alias", "a", "b"])?.reason.contains("isn't allowed") == true)
+        let other = ExtraArguments.validate(["--proxy-evil"])?.reason
+        #expect(other?.contains("Not supported in Downer: --proxy-evil") == true)
+        #expect(other?.contains("Only common download options are allowed") == true)
     }
 
     // MARK: parse / build
