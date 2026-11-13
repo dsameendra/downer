@@ -23,6 +23,7 @@ struct YtDlpArgumentsTests {
     let link = "https://example.com/v"
     /// Downer's own cookie flags with Sign-in off: they cancel any cookie setting from a yt-dlp config file.
     let cookiesOff = ["--no-cookies", "--no-cookies-from-browser"]
+    let infoJsonOff = ["--no-write-info-json", "--no-embed-info-json"]
 
     func download(only: [Int]? = nil) -> YtDlpArguments.Purpose {
         .download(pathFile: "/tmp/p.txt", ffmpegDirectory: "/opt/ff", only: only)
@@ -38,6 +39,7 @@ struct YtDlpArgumentsTests {
         let args = YtDlpArguments.build(for: o, purpose: download(), useCookies: false, url: link)
         let expected = YtDlpArguments.formatArguments(for: o)
             + cookiesOff
+            + infoJsonOff
             + ["--print-to-file", "after_move:filepath", "/tmp/p.txt", "--newline", "--ffmpeg-location", "/opt/ff", link]
         #expect(args == expected)
     }
@@ -49,7 +51,8 @@ struct YtDlpArgumentsTests {
         #expect(Array(args.prefix(format.count)) == format)
         #expect(Array(args[format.count...].prefix(2)) == ["--foo", "bar"])
         #expect(Array(args[(format.count + 2)...].prefix(2)) == cookiesOff)
-        #expect(args[format.count + 4] == "--print-to-file")
+        #expect(Array(args[(format.count + 4)...].prefix(2)) == infoJsonOff)
+        #expect(args[format.count + 6] == "--print-to-file")
         let probe = YtDlpArguments.build(for: o, purpose: .probe(only: nil), useCookies: false, url: link)
         #expect(probe == ["--foo", "bar"] + cookiesOff + probeFlags + [link])
     }
@@ -69,6 +72,10 @@ struct YtDlpArgumentsTests {
         let i = dl.firstIndex(of: "--cookies-from-browser")!
         #expect(dl[i + 1] == "firefox")
         #expect(i < dl.firstIndex(of: "--print-to-file")!)
+        // info-json is cancelled after the user's extra args and the cookie flags, for downloads only
+        #expect(dl.firstIndex(of: "--no-write-info-json")! > dl.firstIndex(of: "--x")!)
+        #expect(dl.firstIndex(of: "--no-embed-info-json")! > i)
+        #expect(!on.contains("--no-write-info-json"))
         // --no-cookies precedes the browser flag, and a config's cookie jar can never be read or rewritten
         #expect(dl.firstIndex(of: "--no-cookies")! < i)
         #expect(!dl.contains("--no-cookies-from-browser"))

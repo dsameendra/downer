@@ -139,7 +139,7 @@ final class OutputPump: @unchecked Sendable {
     func start(reading handle: FileHandle, process: Process) {
         // If something the tool spawned keeps the pipe open after it exits, do not wait for it forever.
         process.terminationHandler = { [self] p in
-            DispatchQueue.global().asyncAfter(deadline: .now() + 2) { sendExit(p.terminationStatus) }
+            DispatchQueue.global().asyncAfter(deadline: .now() + 2) { self.sendExit(p.terminationStatus) }
         }
         let thread = Thread { [self] in
             let buffer = LineBuffer()

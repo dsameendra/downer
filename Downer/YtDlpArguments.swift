@@ -14,7 +14,8 @@ enum YtDlpArguments {
         case download(pathFile: String, ffmpegDirectory: String, only: [Int]?)
     }
 
-    /// Order: format args (download only), extra args, cookie flags, Downer's own flags, the link.
+    /// Order: format args (download only), extra args, cookie flags, Downer's own flags (downloads also
+    /// cancel info-json writing), the link.
     ///
     /// yt-dlp also reads config files (~/.config/yt-dlp/config, ~/yt-dlp.conf, ...) that could turn
     /// cookies on whatever Sign-in says. Downer's flags come last, so they win: with Sign-in off,
@@ -38,6 +39,9 @@ enum YtDlpArguments {
             args += ["--flat-playlist", "--no-warnings", "--print", "%(playlist_title|)s\t%(title)s"]
             args += items(only)
         case .download(let pathFile, let ffmpegDirectory, let only):
+            // A config file's --write-info-json / --embed-info-json would write the `cookies` field of the
+            // info dict to disk when Sign-in is on, so cancel them for every download.
+            args += ["--no-write-info-json", "--no-embed-info-json"]
             args += ["--print-to-file", "after_move:filepath", pathFile]
             args += ["--newline", "--ffmpeg-location", ffmpegDirectory]
             args += items(only)
