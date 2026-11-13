@@ -376,18 +376,19 @@ struct SettingsView: View {
                 .frame(width: 58, alignment: .leading)
 
             HStack(spacing: 6) {
-                Image(systemName: installed ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                Image(systemName: installed ? "checkmark.circle.fill"
+                    : tool.isRequired ? "exclamationmark.circle.fill" : "plus.circle.fill")
                     .font(.system(size: 11))
-                    .foregroundStyle(installed ? Color.green : Color.orange)
+                    .foregroundStyle(installed ? Color.green : tool.isRequired ? Color.orange : Color.secondary)
                     .contentTransition(.symbolEffect(.replace))
                     .symbolEffect(.bounce, value: installed)
-                Text(statusText(installed: installed, version: st?.version, busy: busy))
+                Text(statusText(tool, installed: installed, version: st?.version, busy: busy))
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .contentTransition(.opacity)
-                    .help(st?.path ?? "")
+                    .help(st?.path ?? tool.subtitle)
             }
             .padding(.horizontal, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -405,7 +406,7 @@ struct SettingsView: View {
             } else {
                 Button("Install") { deps.install(tool) }
                     .buttonStyle(PrimaryPillButtonStyle())
-                    .disabled(tool != .ytDlp && deps.brewPath == nil)
+                    .disabled(tool.needsHomebrew && deps.brewPath == nil)
             }
         }
         .padding(.leading, 14)
@@ -421,9 +422,12 @@ struct SettingsView: View {
         }
     }
 
-    private func statusText(installed: Bool, version: String?, busy: Bool) -> String {
+    private func statusText(_ tool: Tool, installed: Bool, version: String?, busy: Bool) -> String {
         if busy { return "Installing…" }
-        if !installed { return deps.hasCheckedOnce ? "Not found" : "Checking…" }
+        if !installed {
+            if !deps.hasCheckedOnce { return "Checking…" }
+            return tool.isRequired ? "Not found" : "Recommended"
+        }
         return version.map { "Installed · \($0)" } ?? "Installed"
     }
 

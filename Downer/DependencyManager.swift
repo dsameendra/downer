@@ -2,16 +2,16 @@
 //  DependencyManager.swift
 //  Downer
 //
-//  Finds yt-dlp, ffmpeg and ffprobe, and installs them from Settings:
-//  through Homebrew when it is present, or (yt-dlp only) by downloading the
-//  official standalone release into Application Support.
+//  Finds yt-dlp, ffmpeg, ffprobe and deno, installs and updates them from
+//  Settings: through Homebrew when it is present, or (yt-dlp and deno) by
+//  downloading the official standalone release into Application Support.
 //
 
 import AppKit
 import Foundation
 
 enum Tool: String, CaseIterable, Identifiable {
-    case ytDlp, ffmpeg, ffprobe
+    case ytDlp, ffmpeg, ffprobe, deno
 
     var id: String { rawValue }
 
@@ -20,8 +20,19 @@ enum Tool: String, CaseIterable, Identifiable {
         case .ytDlp: return "yt-dlp"
         case .ffmpeg: return "ffmpeg"
         case .ffprobe: return "ffprobe"
+        case .deno: return "deno"
         }
     }
+
+    /// Downloads work without the recommended tools; they only get better with them.
+    var isRequired: Bool { self != .deno }
+
+    var subtitle: String {
+        self == .deno ? "JavaScript runtime. Recommended for YouTube." : ""
+    }
+
+    /// ffmpeg has no standalone download Downer can fetch.
+    var needsHomebrew: Bool { self == .ffmpeg || self == .ffprobe }
 
     /// The AppStorage key the download code already reads.
     var defaultsKey: String {
@@ -29,15 +40,31 @@ enum Tool: String, CaseIterable, Identifiable {
         case .ytDlp: return "ytDlpPath"
         case .ffmpeg: return "ffmpegPath"
         case .ffprobe: return "ffprobePath"
+        case .deno: return "denoPath"
         }
     }
 
     var defaultPath: String { "/opt/homebrew/bin/" + title }
 
     /// ffprobe ships inside the ffmpeg formula, so both install together.
-    var installGroup: Tool { self == .ytDlp ? .ytDlp : .ffmpeg }
+    var installGroup: Tool { self == .ffprobe ? .ffmpeg : self }
 
-    var brewFormula: String { self == .ytDlp ? "yt-dlp" : "ffmpeg" }
+    var brewFormula: String {
+        switch self {
+        case .ytDlp: return "yt-dlp"
+        case .ffmpeg, .ffprobe: return "ffmpeg"
+        case .deno: return "deno"
+        }
+    }
+}
+
+/// How a tool gets updated, decided from where it is installed.
+enum UpdateMethod: Equatable {
+    case brew(formula: String)
+    /// The tool updates itself; these are the arguments to run it with.
+    case selfUpdate(args: [String])
+    /// A path the user picked: Downer does not know how to update it.
+    case manual
 }
 
 struct ToolStatus: Equatable {
@@ -50,6 +77,7 @@ enum InstallError: LocalizedError {
     case needsHomebrew
     case brewFailed(String)
     case download(String)
+    case updateFailed(String)
 
     var errorDescription: String? {
         switch self {
@@ -59,6 +87,8 @@ enum InstallError: LocalizedError {
             return "Homebrew could not finish the install. \(detail)"
         case .download(let detail):
             return "The download failed. \(detail)"
+        case .updateFailed(let detail):
+            return "The update did not finish. \(detail)"
         }
     }
 }
@@ -71,6 +101,8 @@ final class DependencyManager: ObservableObject {
     @Published private(set) var installing: Set<Tool> = []
     @Published private(set) var log = ""
     @Published private(set) var failure: String?
+    /// The outcome of the last update, shown under the list.
+    @Published private(set) var notice: String?
 
     private var activationObserver: NSObjectProtocol?
 
@@ -87,8 +119,14 @@ final class DependencyManager: ObservableObject {
     }
 
     // MARK: Queries
+    /// Required tools that are not installed. Downloads cannot run without these.
     var missing: [Tool] {
-        Tool.allCases.filter { status[$0]?.isInstalled == false }
+        Tool.allCases.filter { $0.isRequired && status[$0]?.isInstalled == false }
+    }
+
+    /// Recommended tools that are not installed. Never blocks a download.
+    var recommendedMissing: [Tool] {
+        Tool.allCases.filter { !$0.isRequired && status[$0]?.isInstalled == false }
     }
 
     var hasCheckedOnce: Bool { !status.isEmpty }
@@ -136,22 +174,26 @@ final class DependencyManager: ObservableObject {
         UserDefaults.standard.string(forKey: tool.defaultsKey) ?? tool.defaultPath
     }
 
-    nonisolated private static func locate(_ tool: Tool) -> String? {
+    nonisolated static func locate(_ tool: Tool) -> String? {
         let fm = FileManager.default
         let configured = configuredPath(tool)
         if fm.isExecutableFile(atPath: configured) { return configured }
         let dirs = [
             "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin",
-            managedBinDirectory.path,
+            managedBinDirectory.path, NSHomeDirectory() + "/.deno/bin",
         ]
         return dirs.map { $0 + "/" + tool.title }.first { fm.isExecutableFile(atPath: $0) }
     }
 
     nonisolated private static func version(of tool: Tool, at path: String) -> String? {
-        let args = tool == .ytDlp ? ["--version"] : ["-version"]
+        let args = tool == .ffmpeg || tool == .ffprobe ? ["-version"] : ["--version"]
         guard let out = capture(path, args) else { return nil }
         let first = out.split(separator: "\n").first.map(String.init) ?? ""
         if tool == .ytDlp { return first.trimmingCharacters(in: .whitespaces) }
+        if tool == .deno {  // "deno 2.1.4 (stable, release, aarch64-apple-darwin)"
+            let parts = first.split(separator: " ")
+            return parts.count > 1 ? String(parts[1]) : nil
+        }
         // "ffmpeg version 7.1 Copyright …"
         let parts = first.split(separator: " ")
         return parts.count > 2 ? String(parts[2]) : nil
@@ -176,14 +218,17 @@ final class DependencyManager: ObservableObject {
         guard !installing.contains(group) else { return }
         installing.insert(group)
         failure = nil
+        notice = nil
         log = "Starting…"
 
         Task {
             do {
                 if let brew = brewPath {
-                    try await runBrew(brew, formula: group.brewFormula)
+                    try await runBrew(brew, ["install", group.brewFormula])
                 } else if group == .ytDlp {
                     try await downloadYtDlp()
+                } else if group == .deno {
+                    try await downloadDeno()
                 } else {
                     throw InstallError.needsHomebrew
                 }
@@ -208,14 +253,24 @@ final class DependencyManager: ObservableObject {
         if !line.isEmpty { log = String(line.prefix(90)) }
     }
 
-    private func runBrew(_ brew: String, formula: String) async throws {
+    private func runBrew(_ brew: String, _ arguments: [String]) async throws {
+        // an upgrade needs brew's own index refresh, or it never sees a new release
+        let upgrading = arguments.first == "upgrade"
+        let (status, _) = try await run(brew, arguments, brewEnvironment: !upgrading)
+        if status != 0 { throw InstallError.brewFailed("(exit \(status))") }
+    }
+
+    /// Runs a process, streaming its last output line into the log.
+    private func run(_ path: String, _ arguments: [String], brewEnvironment: Bool = false)
+        async throws -> (status: Int32, output: String)
+    {
         try await withCheckedThrowingContinuation {
-            (cont: CheckedContinuation<Void, Error>) in
+            (cont: CheckedContinuation<(status: Int32, output: String), Error>) in
             let proc = Process()
-            proc.executableURL = URL(fileURLWithPath: brew)
-            proc.arguments = ["install", formula]
+            proc.executableURL = URL(fileURLWithPath: path)
+            proc.arguments = arguments
             var env = ProcessInfo.processInfo.environment
-            env["HOMEBREW_NO_AUTO_UPDATE"] = "1"
+            if brewEnvironment { env["HOMEBREW_NO_AUTO_UPDATE"] = "1" }
             env["HOMEBREW_NO_ENV_HINTS"] = "1"
             env["NONINTERACTIVE"] = "1"
             proc.environment = env
@@ -223,6 +278,7 @@ final class DependencyManager: ObservableObject {
             let pipe = Pipe()
             proc.standardOutput = pipe
             proc.standardError = pipe
+            let collected = LockedText()
             pipe.fileHandleForReading.readabilityHandler = { [weak self] h in
                 let data = h.availableData
                 guard !data.isEmpty else {
@@ -230,20 +286,17 @@ final class DependencyManager: ObservableObject {
                     return
                 }
                 guard let s = String(data: data, encoding: .utf8) else { return }
+                collected.append(s)
                 Task { @MainActor in
                     self?.setLog(s)
                 }
             }
             proc.terminationHandler = { p in
                 pipe.fileHandleForReading.readabilityHandler = nil
-                if p.terminationStatus == 0 {
-                    cont.resume()
-                } else {
-                    cont.resume(throwing: InstallError.brewFailed("(exit \(p.terminationStatus))"))
-                }
+                cont.resume(returning: (p.terminationStatus, collected.value))
             }
             do { try proc.run() } catch {
-                cont.resume(throwing: InstallError.brewFailed(error.localizedDescription))
+                cont.resume(throwing: InstallError.updateFailed(error.localizedDescription))
             }
         }
     }
@@ -271,4 +324,124 @@ final class DependencyManager: ObservableObject {
             throw InstallError.download(error.localizedDescription)
         }
     }
+
+    private func downloadDeno() async throws {
+        setLog("Downloading deno…")
+        #if arch(arm64)
+            let asset = "deno-aarch64-apple-darwin.zip"
+        #else
+            let asset = "deno-x86_64-apple-darwin.zip"
+        #endif
+        guard
+            let url = URL(
+                string: "https://github.com/denoland/deno/releases/latest/download/" + asset)
+        else { return }
+        let fm = FileManager.default
+        let scratch = fm.temporaryDirectory.appendingPathComponent("downer-deno-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: scratch) }
+        do {
+            let (tmp, response) = try await URLSession.shared.download(from: url)
+            if let http = response as? HTTPURLResponse, http.statusCode != 200 {
+                throw InstallError.download("GitHub answered \(http.statusCode).")
+            }
+            try fm.createDirectory(at: scratch, withIntermediateDirectories: true)
+            let zip = scratch.appendingPathComponent("deno.zip")
+            try fm.moveItem(at: tmp, to: zip)
+            let (status, output) = try await run(
+                "/usr/bin/ditto", ["-x", "-k", zip.path, scratch.path])
+            guard status == 0 else { throw InstallError.download(output) }
+            let unpacked = scratch.appendingPathComponent("deno")
+            guard fm.fileExists(atPath: unpacked.path) else {
+                throw InstallError.download("The archive did not contain deno.")
+            }
+            try fm.createDirectory(at: Self.managedBinDirectory, withIntermediateDirectories: true)
+            let dest = Self.managedBinDirectory.appendingPathComponent("deno")
+            if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
+            try fm.moveItem(at: unpacked, to: dest)
+            try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dest.path)
+        } catch let error as InstallError {
+            throw error
+        } catch {
+            throw InstallError.download(error.localizedDescription)
+        }
+    }
+
+    // MARK: Update
+    /// Where a tool came from, judged by its (symlink-resolved) path.
+    nonisolated static func updateMethod(
+        for tool: Tool, resolvedPath: String, managedDir: String
+    ) -> UpdateMethod {
+        let managedPrefix = managedDir.hasSuffix("/") ? managedDir : managedDir + "/"
+        if resolvedPath.hasPrefix(managedPrefix) {
+            switch tool {
+            case .ytDlp: return .selfUpdate(args: ["-U"])
+            case .deno: return .selfUpdate(args: ["upgrade"])
+            case .ffmpeg, .ffprobe: return .manual
+            }
+        }
+        let brewPrefixes = ["/opt/homebrew/", "/usr/local/Cellar/", "/home/linuxbrew/.linuxbrew/"]
+        if brewPrefixes.contains(where: { resolvedPath.hasPrefix($0) }) {
+            return .brew(formula: tool.brewFormula)
+        }
+        return .manual
+    }
+
+    func updateMethod(for tool: Tool) -> UpdateMethod? {
+        guard let path = status[tool]?.path else { return nil }
+        let managed = Self.managedBinDirectory.path
+        // a managed binary is judged by where Downer put it, anything else by where its symlink leads
+        let judged = path.hasPrefix(managed + "/") ? path : (path as NSString).resolvingSymlinksInPath
+        let method = Self.updateMethod(for: tool, resolvedPath: judged, managedDir: managed)
+        if case .brew = method, brewPath == nil { return .manual }
+        return method
+    }
+
+    func update(_ tool: Tool) {
+        let group = tool.installGroup
+        guard !installing.contains(group), let method = updateMethod(for: tool),
+            let path = status[tool]?.path
+        else { return }
+        let before = status[tool]?.version
+        installing.insert(group)
+        failure = nil
+        notice = nil
+        log = "Updating \(group.title)…"
+
+        Task {
+            do {
+                switch method {
+                case .brew(let formula):
+                    guard let brew = brewPath else { throw InstallError.needsHomebrew }
+                    try await runBrew(brew, ["upgrade", formula])
+                case .selfUpdate(let args):
+                    let (code, output) = try await run(path, args)
+                    if code != 0 {
+                        let line = output.split(whereSeparator: \.isNewline).last.map(String.init)
+                        throw InstallError.updateFailed(line ?? "(exit \(code))")
+                    }
+                case .manual:
+                    break
+                }
+                let after = await Task.detached { Self.version(of: tool, at: path) }.value
+                if let after, after != before {
+                    notice = "\(group.title) updated to \(after)"
+                } else {
+                    notice = "\(group.title) is already up to date"
+                }
+            } catch {
+                failure = error.localizedDescription
+            }
+            installing.remove(group)
+            log = ""
+            refresh()
+        }
+    }
+}
+
+/// Collects process output from a readability handler's background queue.
+private final class LockedText: @unchecked Sendable {
+    private let lock = NSLock()
+    private var text = ""
+    func append(_ s: String) { lock.lock(); text += s; lock.unlock() }
+    var value: String { lock.lock(); defer { lock.unlock() }; return text }
 }

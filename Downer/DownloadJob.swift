@@ -22,6 +22,8 @@ struct JobOptions: Equatable {
     /// Prefer H.264 video so files play everywhere.
     var compatibilityH264 = false
     var extraArguments: [String] = []
+    /// deno (or another JS runtime) for YouTube's signature challenges; nil = none found.
+    var jsRuntimePath: String? = nil
 
     static func current(_ defaults: UserDefaults = .standard) -> JobOptions {
         let downloads =
@@ -37,7 +39,8 @@ struct JobOptions: Equatable {
             cookiesBrowser: defaults.bool(forKey: "cookiesEnabled")
                 ? CookieBrowser(rawValue: defaults.string(forKey: "cookiesBrowser") ?? "") : nil,
             compatibilityH264: defaults.bool(forKey: "compatibilityH264"),
-            extraArguments: ExtraArguments.parse(defaults.string(forKey: "extraArguments") ?? "")
+            extraArguments: ExtraArguments.parse(defaults.string(forKey: "extraArguments") ?? ""),
+            jsRuntimePath: DependencyManager.locate(.deno)
         )
     }
 }

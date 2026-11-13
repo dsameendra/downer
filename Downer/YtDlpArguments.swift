@@ -24,6 +24,7 @@ enum YtDlpArguments {
         if useCookies, let browser = options.cookiesBrowser {
             args += ["--cookies-from-browser", browser.ytDlpName]
         }
+        if let runtime = options.jsRuntimePath { args += ["--js-runtimes", "deno:" + runtime] }
         switch purpose {
         case .probe(let only):
             args += ["--flat-playlist", "--no-warnings", "--print", "%(playlist_title|)s\t%(title)s"]
