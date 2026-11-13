@@ -101,13 +101,16 @@ struct MainAppView: View {
 
             VStack {
                 TitleBarRow(title: "Downer") {
-                    SettingsLink {
-                        Image(systemName: "slider.horizontal.3")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundStyle(.primary)
+                    HStack(spacing: 8) {
+                        UpdateBadge()
+                        SettingsLink {
+                            Image(systemName: "slider.horizontal.3")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundStyle(.primary)
+                        }
+                        .buttonStyle(GlassCircleButtonStyle())
+                        .help("Settings")
                     }
-                    .buttonStyle(GlassCircleButtonStyle())
-                    .help("Settings")
                 }
                 Spacer()
             }

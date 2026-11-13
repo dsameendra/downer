@@ -13,7 +13,9 @@ struct SettingsView: View {
     @AppStorage("backgroundGlow") private var backgroundGlow = true
     @AppStorage(Haptics.storageKey) private var hapticsOn = true
     @AppStorage(AppearanceMode.storageKey) private var appearanceRaw = AppearanceMode.system.rawValue
+    @AppStorage(UpdateChecker.autoCheckKey) private var autoCheckUpdates = true
     @ObservedObject private var deps = DependencyManager.shared
+    @ObservedObject private var updates = UpdateChecker.shared
 
     var body: some View {
         ZStack {
@@ -29,6 +31,7 @@ struct SettingsView: View {
                     appearanceGroup.appear(0)
                     shortcutGroup.appear(1)
                     requirementsGroup.appear(2)
+                    updatesGroup.appear(3)
                 }
                 .padding(16)
                 .padding(.top, -4)
@@ -40,7 +43,7 @@ struct SettingsView: View {
                 .frame(maxHeight: .infinity, alignment: .top)
         }
         .tint(Brand.red)
-        .frame(width: 400, height: 405)
+        .frame(width: 400, height: 560)
         .onAppear { deps.refresh() }
     }
 
@@ -118,6 +121,67 @@ struct SettingsView: View {
             .padding(.leading, 14)
             .padding(.trailing, 8)
             .frame(height: 46)
+        }
+    }
+
+    private var updatesGroup: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            OptionGroup(title: "Updates") {
+                HStack(spacing: 14) {
+                    Text("Check for updates automatically")
+                        .font(.system(size: 14))
+                    Spacer(minLength: 0)
+                    Toggle("Check for updates automatically", isOn: $autoCheckUpdates)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
+                .padding(.leading, 14)
+                .padding(.trailing, 12)
+                .frame(height: 46)
+                .overlay(alignment: .bottom) { Divider().opacity(0.6).padding(.horizontal, 14) }
+
+                HStack(spacing: 8) {
+                    updateResult
+                        .font(.system(size: 12))
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                    if updates.isChecking {
+                        ProgressView().controlSize(.small).frame(width: 70)
+                    } else {
+                        Button("Check now") { Task { await updates.check() } }
+                            .buttonStyle(PillButtonStyle())
+                    }
+                }
+                .padding(.leading, 14)
+                .padding(.trailing, 8)
+                .frame(minHeight: 44)
+            }
+            Text("Only contacts GitHub. Nothing is downloaded or installed automatically.")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 14)
+        }
+    }
+
+    @ViewBuilder
+    private var updateResult: some View {
+        if let error = updates.lastError {
+            Text(error).foregroundStyle(Color.orange)
+        } else if updates.updateAvailable, let release = updates.latest {
+            HStack(spacing: 4) {
+                Text("Downer \(release.version) is available —")
+                    .foregroundStyle(.secondary)
+                Button("View release") { updates.openReleasePage() }
+                    .buttonStyle(.link)
+            }
+        } else if updates.hasChecked {
+            Text("Downer \(UpdateChecker.currentVersion) is up to date")
+                .foregroundStyle(.secondary)
+        } else {
+            Text("Downer \(UpdateChecker.currentVersion)")
+                .foregroundStyle(.secondary)
         }
     }
 

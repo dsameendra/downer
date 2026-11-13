@@ -87,6 +87,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
         KeyboardShortcuts.onKeyDown(for: .downloadShortcut) { [weak self] in
             self?.togglePopover(nil)
         }
+
+        UpdateChecker.shared.checkOnLaunchIfDue()
     }
 
     // MARK: Menu bar icon
