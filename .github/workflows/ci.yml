@@ -38,6 +38,7 @@ jobs:
             -destination 'platform=macOS' \
             -only-testing:DownerTests \
             -derivedDataPath "$RUNNER_TEMP/dd" \
+            -resultBundlePath "$RUNNER_TEMP/tests.xcresult" \
             -skipPackagePluginValidation -skipMacroValidation \
             CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= \
             > "$RUNNER_TEMP/test.log" 2>&1 || true
@@ -49,6 +50,11 @@ jobs:
             tail -n 60 "$RUNNER_TEMP/test.log"
             exit 1
           fi
+
+      - name: Test totals
+        run: |
+          xcrun xcresulttool get test-results summary --path "$RUNNER_TEMP/tests.xcresult" \
+            | python3 -I -c 'import json,sys; d=json.load(sys.stdin); print("{result}: {passedTests} passed, {failedTests} failed, {skippedTests} skipped of {totalTestCount}".format(**d)); sys.exit(d["failedTests"] > 0)'
 
       - name: Gesture model tests
         run: ./scripts/test-gestures.sh
