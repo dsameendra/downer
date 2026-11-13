@@ -238,6 +238,7 @@ struct SettingsView: View {
                             .font(.system(size: 12))
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
+                        if chosenBrowser == .safari { FullDiskAccessRow().padding(.vertical, 4) }
                         Button("What does this do?") { consent = .explain }
                             .buttonStyle(.link)
                             .font(.system(size: 12))

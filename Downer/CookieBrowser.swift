@@ -62,7 +62,7 @@ enum CookieBrowser: String, CaseIterable, Identifiable, Codable {
     var permissionNote: String {
         switch self {
         case .safari:
-            "Safari's cookies are protected. Downer needs Full Disk Access (System Settings → Privacy & Security → Full Disk Access). Downer won't ask for it — add it yourself, or pick another browser."
+            "Safari's cookies are protected, so Downer needs Full Disk Access. macOS won't ask for it; allow Downer in System Settings, or pick another browser."
         case .firefox:
             "No extra permission needed."
         case .chrome, .brave, .edge, .chromium, .vivaldi, .opera:
