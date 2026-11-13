@@ -65,6 +65,11 @@ struct DownloadJob: Identifiable, Equatable {
     var only: [Int]?
     /// Set once a network hiccup has been retried automatically.
     var autoRetried = false
+    /// Set once a site has asked for a sign-in; from then on this job uses the chosen
+    /// browser's cookies (only ever true when the person turned Sign-in on).
+    var needsCookies = false
+    /// The failure is fixed by turning on Sign-in in Settings (never turned on automatically).
+    var suggestsSignInSetting = false
 
     var isPlaylist: Bool { playlist != nil }
     var isFinished: Bool { state == .done || state == .failed || state == .cancelled }

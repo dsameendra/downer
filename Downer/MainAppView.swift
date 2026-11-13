@@ -81,6 +81,7 @@ struct MainAppView: View {
             ScrollView {
                 VStack(spacing: 14) {
                     setupBanner
+                    signInBanner
                     urlField.appear(0)
                     typeSelector.appear(1)
                     optionGroups.appear(2)
@@ -168,6 +169,32 @@ struct MainAppView: View {
                 }
                 Spacer()
                 SettingsLink { Text("Set up") }
+                    .buttonStyle(PillButtonStyle())
+            }
+            .padding(.leading, 14)
+            .padding(.trailing, 10)
+            .frame(height: 52)
+            .downerSurface()
+            .transition(.opacity.combined(with: .move(edge: .top)))
+        }
+    }
+
+    /// Offered only after a link failed for want of a sign-in; opening Settings is the person's choice.
+    @ViewBuilder
+    private var signInBanner: some View {
+        if dl.jobs.contains(where: { $0.state == .failed && $0.suggestsSignInSetting }) {
+            HStack(spacing: 10) {
+                Image(systemName: "person.crop.circle.badge.exclamationmark")
+                    .foregroundStyle(.orange)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Sign-in needed")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text("Turn on Sign-in in Settings to try again.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                SettingsLink { Text("Open Settings") }
                     .buttonStyle(PillButtonStyle())
             }
             .padding(.leading, 14)

@@ -15,6 +15,10 @@ struct SettingsView: View {
     @AppStorage(AppearanceMode.storageKey) private var appearanceRaw = AppearanceMode.system.rawValue
     @AppStorage(UpdateChecker.autoCheckKey) private var autoCheckUpdates = true
     @AppStorage("extraArguments") private var extraArgumentsText = ""
+    // browser sign-in: off unless the consent sheet's "Turn on" sets it
+    @AppStorage("cookiesEnabled") private var cookiesEnabled = false
+    @AppStorage("cookiesBrowser") private var cookiesBrowserRaw = ""
+    @State private var consent: ConsentMode?
     @ObservedObject private var deps = DependencyManager.shared
     @ObservedObject private var updates = UpdateChecker.shared
 
@@ -31,9 +35,10 @@ struct SettingsView: View {
                 VStack(spacing: 14) {
                     appearanceGroup.appear(0)
                     shortcutGroup.appear(1)
-                    requirementsGroup.appear(2)
-                    updatesGroup.appear(3)
-                    advancedGroup.appear(4)
+                    signInGroup.appear(2)
+                    requirementsGroup.appear(3)
+                    updatesGroup.appear(4)
+                    advancedGroup.appear(5)
                 }
                 .padding(16)
                 .padding(.top, -4)
@@ -170,6 +175,90 @@ struct SettingsView: View {
                     Text("These are added to every download").foregroundStyle(.secondary)
                 }
             }
+        }
+    }
+
+    // MARK: Sign-in (browser cookies)
+    private enum ConsentMode: Identifiable {
+        case turnOn, explain
+        var id: Self { self }
+    }
+
+    private var chosenBrowser: CookieBrowser {
+        CookieBrowser(rawValue: cookiesBrowserRaw).flatMap { $0.isInstalled ? $0 : nil }
+            ?? CookieBrowser.firstInstalled ?? .safari
+    }
+
+    private var signInGroup: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            OptionGroup(title: "Sign-in (browser cookies)") {
+                HStack(spacing: 14) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Sign in with a browser")
+                            .font(.system(size: 14))
+                        Text("For videos that need a signed-in session. Off by default.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
+                    // turning on only asks; the sheet's "Turn on" is what enables it
+                    Toggle(
+                        "Sign in with a browser",
+                        isOn: Binding(
+                            get: { cookiesEnabled },
+                            set: { on in
+                                if on { consent = .turnOn } else { cookiesEnabled = false }
+                            })
+                    )
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                }
+                .padding(.vertical, 8)
+                .padding(.leading, 14)
+                .padding(.trailing, 12)
+                .frame(minHeight: 58)
+
+                if cookiesEnabled {
+                    HStack(spacing: 14) {
+                        Text("Browser")
+                            .font(.system(size: 14))
+                        Spacer(minLength: 0)
+                        CookieBrowserMenu(
+                            selection: Binding(
+                                get: { chosenBrowser }, set: { cookiesBrowserRaw = $0.rawValue }))
+                    }
+                    .padding(.leading, 14)
+                    .padding(.trailing, 12)
+                    .frame(height: 46)
+                    .overlay(alignment: .top) { Divider().opacity(0.6).padding(.horizontal, 14) }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(chosenBrowser.permissionNote)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Button("What does this do?") { consent = .explain }
+                            .buttonStyle(.link)
+                            .font(.system(size: 12))
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .overlay(alignment: .top) { Divider().opacity(0.6).padding(.horizontal, 14) }
+                }
+            }
+        }
+        .sheet(item: $consent) { mode in
+            CookieConsentSheet(
+                browser: chosenBrowser,
+                readOnly: mode == .explain,
+                onTurnOn: { browser in
+                    cookiesBrowserRaw = browser.rawValue
+                    cookiesEnabled = true
+                    consent = nil
+                },
+                onClose: { consent = nil })
         }
     }
 

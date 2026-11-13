@@ -27,6 +27,8 @@ final class DownloadManager: ObservableObject {
     private var tracker = PlaylistTracker()
     private var pathFile: URL?
     private var lastErrorLine: String?
+    /// ERROR and WARNING lines of the current run (in memory only, capped), used to pick an error hint.
+    private var errorText = ""
     private var wasCancelled = false
     private var stopQueue = false
     private var idleTask: Task<Void, Never>?
@@ -224,18 +226,27 @@ final class DownloadManager: ObservableObject {
             let only = job.only
             let options = job.options
             Task.detached { [weak self] in
-                let result = Self.probe(url: url, ytDlp: path, options: options, only: only)
-                await self?.applyProbe(result, to: id)
+                // always without cookies first; with them only after a sign-in failure
+                var result = Self.probe(url: url, ytDlp: path, options: options, only: only, useCookies: false)
+                var usedCookies = false
+                if result.value == nil, options.cookiesBrowser != nil,
+                    ErrorHint.classify(result.errorText, cookiesBrowser: options.cookiesBrowser, usedCookies: false)?.isSignIn == true
+                {
+                    usedCookies = true
+                    result = Self.probe(url: url, ytDlp: path, options: options, only: only, useCookies: true)
+                }
+                await self?.applyProbe(result.value, usedCookies: usedCookies && result.value != nil, to: id)
             }
             return
         }
         pump()
     }
 
-    private func applyProbe(_ result: ProbeResult?, to id: UUID) {
+    private func applyProbe(_ result: ProbeResult?, usedCookies: Bool = false, to id: UUID) {
         resolving = false
         if let i = jobs.firstIndex(where: { $0.id == id }) {
             jobs[i].isResolving = false
+            if usedCookies { jobs[i].needsCookies = true }
             if let result {
                 jobs[i].title = result.playlistTitle ?? result.titles.first
                 if let name = result.playlistTitle, result.titles.count > 1, jobs[i].state == .queued {
@@ -257,16 +268,27 @@ final class DownloadManager: ObservableObject {
     }
 
     /// One quick yt-dlp call that lists titles without downloading anything.
-    nonisolated private static func probe(url: String, ytDlp: String, options: JobOptions, only: [Int]?) -> ProbeResult? {
+    /// `errorText` is yt-dlp's stderr, kept in memory only so a sign-in failure can be recognised.
+    nonisolated private static func probe(
+        url: String, ytDlp: String, options: JobOptions, only: [Int]?, useCookies: Bool
+    ) -> (value: ProbeResult?, errorText: String) {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: ytDlp)
-        // step 1: retry with cookies on sign-in errors
         proc.arguments = YtDlpArguments.build(
-            for: options, purpose: .probe(only: only), useCookies: false, url: url)
+            for: options, purpose: .probe(only: only), useCookies: useCookies, url: url)
         let pipe = Pipe()
+        let errorPipe = Pipe()
         proc.standardOutput = pipe
-        proc.standardError = Pipe()
-        guard (try? proc.run()) != nil else { return nil }
+        proc.standardError = errorPipe
+        guard (try? proc.run()) != nil else { return (nil, "") }
+
+        // read stderr alongside stdout so neither pipe can fill up and stall yt-dlp
+        let errors = ErrorCollector()
+        let errorDone = DispatchSemaphore(value: 0)
+        DispatchQueue.global().async {
+            errors.set(errorPipe.fileHandleForReading.readDataToEndOfFile())
+            errorDone.signal()
+        }
 
         // a link that never answers must not hold up the queue
         let watchdog = DispatchWorkItem { if proc.isRunning { proc.terminate() } }
@@ -274,8 +296,13 @@ final class DownloadManager: ObservableObject {
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         proc.waitUntilExit()
         watchdog.cancel()
-        guard proc.terminationStatus == 0 else { return nil }
+        errorDone.wait()
+        let errorText = errors.text
+        guard proc.terminationStatus == 0 else { return (nil, errorText) }
+        return (parse(data), errorText)
+    }
 
+    nonisolated private static func parse(_ data: Data) -> ProbeResult? {
         let lines = (String(data: data, encoding: .utf8) ?? "")
             .split(whereSeparator: \.isNewline).map(String.init)
         guard !lines.isEmpty else { return nil }
@@ -339,14 +366,14 @@ final class DownloadManager: ObservableObject {
 
         let pathFile = fm.temporaryDirectory.appendingPathComponent("downer-\(UUID().uuidString).txt")
         self.pathFile = pathFile
-        // step 1: retry with cookies on sign-in errors
+        // cookies only once this job has hit a sign-in wall (see finished(code:job:))
         let args = YtDlpArguments.build(
             for: job.options,
             purpose: .download(
                 pathFile: pathFile.path,
                 ffmpegDirectory: (ffmpegPath as NSString).deletingLastPathComponent,
                 only: job.only),
-            useCookies: false, url: job.url)
+            useCookies: job.needsCookies, url: job.url)
 
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: ytDlpPath)
@@ -384,11 +411,13 @@ final class DownloadManager: ObservableObject {
             : PlaylistTracker(retrying: job.only, keeping: job.playlist)
         wasCancelled = false
         lastErrorLine = nil
+        errorText = ""
         jobs[i].state = .running
         jobs[i].detail = nil
+        jobs[i].suggestsSignInSetting = false
         runningID = id
         process = proc
-        status = "Starting download…"
+        status = queuePrefix() + "Starting download…"
 
         do {
             try proc.run()
@@ -408,6 +437,9 @@ final class DownloadManager: ObservableObject {
         guard id == runningID, let i = jobs.firstIndex(where: { $0.id == id }) else { return }
         let line = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if line.hasPrefix("ERROR") { lastErrorLine = line }
+        if (line.hasPrefix("ERROR") || line.hasPrefix("WARNING")) && errorText.count < 8_192 {
+            errorText += line + "\n"
+        }
 
         tracker.consume(line)
         if tracker.progress != jobs[i].playlist { jobs[i].playlist = tracker.progress }
@@ -453,9 +485,14 @@ final class DownloadManager: ObservableObject {
     }
 
     /// "Link 2 of 5 · " when several links are queued.
+    /// Also says "Using Safari sign-in · " while the running job borrows a browser's cookies.
     private func queuePrefix() -> String {
-        guard jobs.count > 1, let running = jobs.firstIndex(where: { $0.id == runningID }) else { return "" }
-        return "Link \(running + 1) of \(jobs.count) · "
+        guard let running = jobs.firstIndex(where: { $0.id == runningID }) else { return "" }
+        var prefix = jobs.count > 1 ? "Link \(running + 1) of \(jobs.count) · " : ""
+        if jobs[running].needsCookies, let browser = jobs[running].options.cookiesBrowser {
+            prefix += "Using \(browser.displayName) sign-in · "
+        }
+        return prefix
     }
 
     private func finished(code: Int32, job id: UUID) {
@@ -478,8 +515,19 @@ final class DownloadManager: ObservableObject {
         jobs[i].files += files
         jobs[i].speed = nil
 
+        let failedRun = code != 0 || !(jobs[i].playlist?.failed.isEmpty ?? true)
+        let hint = failedRun
+            ? ErrorHint.classify(
+                errorText, cookiesBrowser: jobs[i].options.cookiesBrowser, usedCookies: jobs[i].needsCookies)
+            : nil
         if wasCancelled {
             jobs[i].state = .cancelled
+        } else if hint?.isSignIn == true, let browser = jobs[i].options.cookiesBrowser, !jobs[i].needsCookies {
+            // a sign-in wall and the person opted in: run this job once more with their browser's cookies
+            jobs[i].needsCookies = true
+            if let failed = jobs[i].playlist?.failed.map(\.id), !failed.isEmpty { jobs[i].only = failed }
+            jobs[i].state = .queued
+            status = "Signing in with \(browser.displayName)…"
         } else if let playlist = jobs[i].playlist, !jobs[i].autoRetried,
             !playlist.failed.isEmpty, playlist.failed.allSatisfy({ DownloadJob.isTransient($0.detail) })
         {
@@ -501,6 +549,8 @@ final class DownloadManager: ObservableObject {
             } else {
                 jobs[i].state = .failed
                 jobs[i].detail = "\(playlist.doneCount) of \(playlist.total) downloaded"
+                    + (hint.map { " · " + $0.message } ?? "")
+                jobs[i].suggestsSignInSetting = hint?.needsSignInSetting ?? false
                 hadError = true
             }
         } else if code == 0 {
@@ -509,7 +559,9 @@ final class DownloadManager: ObservableObject {
             completions += 1
         } else {
             jobs[i].state = .failed
-            jobs[i].detail = lastErrorLine.map { PlaylistTracker.reason(from: $0) } ?? "Failed (code \(code))"
+            jobs[i].detail =
+                hint?.message ?? lastErrorLine.map { PlaylistTracker.reason(from: $0) } ?? "Failed (code \(code))"
+            jobs[i].suggestsSignInSetting = hint?.needsSignInSetting ?? false
             hadError = true
         }
         let stopped = stopQueue && wasCancelled
@@ -570,6 +622,25 @@ final class DownloadManager: ObservableObject {
         guard let r = line.range(of: marker) else { return nil }
         let rest = line[r.upperBound...].trimmingCharacters(in: .whitespaces)
         return rest.split(separator: " ").first.map(String.init)
+    }
+}
+
+/// Holds a look-up's stderr between threads. Kept in memory only, never written anywhere.
+private final class ErrorCollector: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = ""
+
+    func set(_ data: Data) {
+        let text = String(decoding: data.prefix(65_536), as: UTF8.self)
+        lock.lock()
+        value = text
+        lock.unlock()
+    }
+
+    var text: String {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
     }
 }
 

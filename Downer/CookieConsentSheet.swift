@@ -1,0 +1,127 @@
+//
+//  CookieConsentSheet.swift
+//  Downer
+//
+//  What the person sees before browser sign-in is turned on. Only "Turn on" here
+//  enables it; "Cancel" leaves it off. Opened again read-only from Settings.
+//
+
+import SwiftUI
+
+/// A menu of browsers; ones that are not installed are shown but cannot be picked.
+struct CookieBrowserMenu: View {
+    @Binding var selection: CookieBrowser
+
+    var body: some View {
+        Menu {
+            ForEach(CookieBrowser.allCases) { browser in
+                Button {
+                    selection = browser
+                } label: {
+                    if browser == selection {
+                        Label(browser.displayName, systemImage: "checkmark")
+                    } else {
+                        Text(browser.isInstalled ? browser.displayName : "\(browser.displayName) (not installed)")
+                    }
+                }
+                .disabled(!browser.isInstalled)
+            }
+        } label: {
+            Text(selection.displayName)
+        }
+        .menuStyle(.button)
+        .fixedSize()
+    }
+}
+
+struct CookieConsentSheet: View {
+    @State var browser: CookieBrowser
+    /// Read-only: just the explanation, with a Done button.
+    var readOnly = false
+    var onTurnOn: (CookieBrowser) -> Void = { _ in }
+    var onClose: () -> Void
+
+    private var canTurnOn: Bool { browser.isInstalled }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Sign in with your browser")
+                        .font(.system(size: 16, weight: .semibold))
+
+                    point(
+                        "What it does",
+                        "Some videos need you to be signed in — for example YouTube's bot check and age check. With this on, yt-dlp can use the cookies from a browser you choose, so it downloads as your signed-in session.")
+                    point(
+                        "When",
+                        "Downer always tries without cookies first. Your browser's cookies are only used when a site says sign-in is required.")
+                    point(
+                        "What is read",
+                        "yt-dlp reads that browser's cookie store on this Mac. Cookies are only sent to the site you're downloading from.")
+                    point(
+                        "What Downer doesn't do",
+                        "Downer never saves, copies, uploads or logs your cookies, and never sees your password.")
+
+                    HStack {
+                        Text("Browser")
+                            .font(.system(size: 13))
+                        Spacer(minLength: 0)
+                        if readOnly {
+                            Text(browser.displayName).foregroundStyle(.secondary)
+                        } else {
+                            CookieBrowserMenu(selection: $browser)
+                        }
+                    }
+                    point("macOS prompts", browser.permissionNote)
+
+                    point(
+                        "Account risk",
+                        "Using your account with a downloader can lead YouTube to rate-limit or flag it. A secondary account is safer.")
+
+                    Text("You can turn this off any time here; it applies from the next download.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(20)
+            }
+            .scrollIndicators(.automatic)
+
+            Divider().opacity(0.6)
+            HStack(spacing: 10) {
+                if !readOnly && CookieBrowser.firstInstalled == nil {
+                    Text("No supported browser found.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.orange)
+                }
+                Spacer()
+                if readOnly {
+                    Button("Done", action: onClose)
+                        .buttonStyle(PrimaryPillButtonStyle())
+                        .keyboardShortcut(.defaultAction)
+                } else {
+                    Button("Cancel", action: onClose)
+                        .buttonStyle(PillButtonStyle())
+                        .keyboardShortcut(.cancelAction)
+                    Button("Turn on") { onTurnOn(browser) }
+                        .buttonStyle(PrimaryPillButtonStyle())
+                        .disabled(!canTurnOn)
+                }
+            }
+            .padding(14)
+        }
+        .frame(width: 400, height: 520)
+    }
+
+    private func point(_ title: String, _ text: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+            Text(text)
+                .font(.system(size: 13))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
