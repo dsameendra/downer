@@ -9,6 +9,7 @@
 //
 
 import AppKit
+import Combine
 import Foundation
 
 @MainActor
@@ -28,7 +29,9 @@ final class DownloadManager: ObservableObject {
     private var pathFile: URL?
     private var lastErrorLine: String?
     /// ERROR and WARNING lines of the current run (in memory only, capped), used to pick an error hint.
-    private var errorText = ""
+    private var errorLog = ErrorLog()
+    /// Shown instead of "Starting download…" when a job starts again after a retry, so the retry is visible.
+    private var startNotes: [UUID: String] = [:]
     private var wasCancelled = false
     private var stopQueue = false
     private var idleTask: Task<Void, Never>?
@@ -36,8 +39,23 @@ final class DownloadManager: ObservableObject {
     // look-ups run one at a time so pasting twenty links does not start twenty yt-dlps
     private var toResolve: [UUID] = []
     private var resolving = false
+    private var probeControl: ProbeControl?
+    private var probingID: UUID?
+    private var installObserver: AnyCancellable?
 
-    private init() {}
+    private init() {
+        // A tool update/install may be running; when it ends, carry on with what is waiting.
+        // (@Published emits before the change, so hop to the next turn to read the new value.)
+        installObserver = DependencyManager.shared.$installing
+            .filter { $0.isEmpty }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self, !self.stopQueue, self.runningID == nil,
+                    self.jobs.contains(where: { $0.state == .queued })
+                else { return }
+                self.resolveNext()
+            }
+    }
 
     #if DEBUG
         /// Previews and screenshots only: show a queue without running anything.
@@ -98,6 +116,7 @@ final class DownloadManager: ObservableObject {
             toResolve.append(job.id)
             added += 1
         }
+        if added > 0 { stopQueue = false }  // new links after a Cancel All still run
         if added == 0 {
             status = "Already in the queue."
         } else if isDownloading {
@@ -130,12 +149,20 @@ final class DownloadManager: ObservableObject {
     /// Stop everything, including what is waiting.
     func cancelAll() {
         stopQueue = true
-        for i in jobs.indices where jobs[i].state == .queued { jobs[i].state = .cancelled }
+        // a look-up in flight must stop too, and must never go on to the cookie probe
+        abandonProbe()
+        toResolve.removeAll()
+        for i in jobs.indices where jobs[i].state == .queued {
+            jobs[i].state = .cancelled
+            jobs[i].isResolving = false
+        }
+        startNotes.removeAll()
         if process != nil {
             wasCancelled = true
             process?.terminate()
         } else {
             status = "Download cancelled."
+            scheduleIdle()
         }
     }
 
@@ -154,9 +181,22 @@ final class DownloadManager: ObservableObject {
         if id == runningID {
             cancelCurrent()
         } else {
+            let wasProbing = id == probingID
+            if wasProbing { abandonProbe() }  // stops yt-dlp and skips the cookie retry
+            toResolve.removeAll { $0 == id }
+            startNotes[id] = nil
             jobs.removeAll { $0.id == id }
             if jobs.isEmpty { status = "Idle" }
+            if wasProbing { resolveNext() }  // the queue carries on with the next link
         }
+    }
+
+    /// Stops the look-up in flight (if any) and frees the look-up slot immediately.
+    private func abandonProbe() {
+        probeControl?.cancel()
+        probeControl = nil
+        probingID = nil
+        resolving = false
     }
 
     func retry(_ id: UUID) {
@@ -216,36 +256,54 @@ final class DownloadManager: ObservableObject {
 
     // MARK: Looking links up
     private func resolveNext() {
-        guard !resolving else { return }
+        guard !resolving, !stopQueue else { return }
+        if QueueLogic.mustWaitForInstall(DependencyManager.shared.installing) {
+            if jobs.contains(where: { $0.state == .queued }) && runningID == nil {
+                status = "Waiting for the update to finish…"
+            }
+            return
+        }
         while let id = toResolve.first {
             toResolve.removeFirst()
-            guard let job = jobs.first(where: { $0.id == id }), job.isResolving else { continue }
+            guard let job = jobs.first(where: { $0.id == id }), job.isResolving, job.state == .queued
+            else { continue }
             resolving = true
+            let control = ProbeControl()
+            probeControl = control
+            probingID = id
             let path = Self.path(for: .ytDlp)
             let url = job.url
             let only = job.only
             let options = job.options
             Task.detached { [weak self] in
                 // always without cookies first; with them only after a sign-in failure
-                var result = Self.probe(url: url, ytDlp: path, options: options, only: only, useCookies: false)
+                var result = Self.probe(
+                    url: url, ytDlp: path, options: options, only: only, useCookies: false, control: control)
                 var usedCookies = false
-                // the current Sign-in setting, not the one from when the link was added
-                if result.value == nil, let browser = CookieBrowser.current(),
+                // the current Sign-in setting, not the one from when the link was added;
+                // never for a look-up that was cancelled (the cookie probe can raise a Keychain prompt)
+                if !control.isCancelled, result.value == nil, let browser = CookieBrowser.current(),
                     ErrorHint.classify(result.errorText, cookiesBrowser: browser, usedCookies: false)?.isSignIn == true
                 {
                     var withCookies = options
                     withCookies.cookiesBrowser = browser
                     usedCookies = true
-                    result = Self.probe(url: url, ytDlp: path, options: withCookies, only: only, useCookies: true)
+                    result = Self.probe(
+                        url: url, ytDlp: path, options: withCookies, only: only, useCookies: true, control: control)
                 }
-                await self?.applyProbe(result.value, usedCookies: usedCookies && result.value != nil, to: id)
+                await self?.applyProbe(
+                    result.value, usedCookies: usedCookies && result.value != nil, to: id, control: control)
             }
             return
         }
         pump()
     }
 
-    private func applyProbe(_ result: ProbeResult?, usedCookies: Bool = false, to id: UUID) {
+    private func applyProbe(_ result: ProbeResult?, usedCookies: Bool = false, to id: UUID, control: ProbeControl) {
+        // a look-up that was cancelled or removed already freed its slot; its late answer is ignored
+        guard probeControl === control else { return }
+        probeControl = nil
+        probingID = nil
         resolving = false
         if let i = jobs.firstIndex(where: { $0.id == id }) {
             jobs[i].isResolving = false
@@ -273,7 +331,7 @@ final class DownloadManager: ObservableObject {
     /// One quick yt-dlp call that lists titles without downloading anything.
     /// `errorText` is yt-dlp's stderr, kept in memory only so a sign-in failure can be recognised.
     nonisolated private static func probe(
-        url: String, ytDlp: String, options: JobOptions, only: [Int]?, useCookies: Bool
+        url: String, ytDlp: String, options: JobOptions, only: [Int]?, useCookies: Bool, control: ProbeControl
     ) -> (value: ProbeResult?, errorText: String) {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: ytDlp)
@@ -285,7 +343,10 @@ final class DownloadManager: ObservableObject {
         let errorPipe = Pipe()
         proc.standardOutput = pipe
         proc.standardError = errorPipe
-        guard (try? proc.run()) != nil else { return (nil, "") }
+        guard control.launch(proc) else { return (nil, "") }
+        defer { control.processEnded() }
+        try? pipe.fileHandleForWriting.close()
+        try? errorPipe.fileHandleForWriting.close()
 
         // read stderr alongside stdout so neither pipe can fill up and stall yt-dlp
         let errors = ErrorCollector()
@@ -332,8 +393,15 @@ final class DownloadManager: ObservableObject {
             finishQueue()
             return
         }
+        // a tool is being updated or installed: wait, and carry on when it is done
+        if QueueLogic.mustWaitForInstall(DependencyManager.shared.installing) {
+            status = "Waiting for the update to finish…"
+            return
+        }
         // wait for the look-up so the job starts with real titles
         if next.isResolving {
+            // a retried link whose look-up was cut short must be looked up again, or it would wait forever
+            if probingID != next.id, !toResolve.contains(next.id) { toResolve.append(next.id) }
             status = "Checking link…"
             resolveNext()
             return
@@ -397,39 +465,21 @@ final class DownloadManager: ObservableObject {
         let pipe = Pipe()
         proc.standardOutput = pipe
         proc.standardError = pipe
-        let buffer = LineBuffer()
-        pipe.fileHandleForReading.readabilityHandler = { [weak self] h in
-            let data = h.availableData
-            guard !data.isEmpty else {
-                h.readabilityHandler = nil
-                return
-            }
-            guard let chunk = String(data: data, encoding: .utf8) else { return }
-            let complete = buffer.append(chunk)
-            guard !complete.isEmpty else { return }
-            Task { @MainActor in
-                for line in complete { self?.handle(line: line, job: id) }
-            }
-        }
-        proc.terminationHandler = { [weak self] p in
-            pipe.fileHandleForReading.readabilityHandler = nil
-            let code = p.terminationStatus
-            Task { @MainActor in self?.finished(code: code, job: id) }
-        }
+        let output = OutputPump()
 
         tracker = job.playlist == nil && job.only == nil
             ? PlaylistTracker()
             : PlaylistTracker(retrying: job.only, keeping: job.playlist)
         wasCancelled = false
         lastErrorLine = nil
-        errorText = ""
+        errorLog = ErrorLog()
         jobs[i].state = .running
         jobs[i].detail = nil
         jobs[i].suggestsSignInSetting = false
         jobs[i].suggestsFullDiskAccess = false
         runningID = id
         process = proc
-        status = queuePrefix() + "Starting download…"
+        status = queuePrefix() + (startNotes.removeValue(forKey: id) ?? "Starting download…")
 
         do {
             try proc.run()
@@ -437,6 +487,19 @@ final class DownloadManager: ObservableObject {
             process = nil
             runningID = nil
             stop("Couldn't start yt‑dlp. \(error.localizedDescription)")
+            return
+        }
+        // our copy of the write end must close, or the reader never sees the end of the output
+        try? pipe.fileHandleForWriting.close()
+        output.start(reading: pipe.fileHandleForReading, process: proc)
+        // one consumer handles every line and then the exit, in order, so the last ERROR line is never lost
+        Task { @MainActor [weak self] in
+            for await event in output.events {
+                switch event {
+                case .line(let line): self?.handle(line: line, job: id)
+                case .exit(let code): self?.finished(code: code, job: id)
+                }
+            }
         }
     }
 
@@ -449,9 +512,7 @@ final class DownloadManager: ObservableObject {
         guard id == runningID, let i = jobs.firstIndex(where: { $0.id == id }) else { return }
         let line = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if line.hasPrefix("ERROR") { lastErrorLine = line }
-        if (line.hasPrefix("ERROR") || line.hasPrefix("WARNING")) && errorText.count < 8_192 {
-            errorText += line + "\n"
-        }
+        errorLog.consume(line)
 
         tracker.consume(line)
         if tracker.progress != jobs[i].playlist { jobs[i].playlist = tracker.progress }
@@ -529,37 +590,52 @@ final class DownloadManager: ObservableObject {
 
         let failedRun = code != 0 || !(jobs[i].playlist?.failed.isEmpty ?? true)
         let currentBrowser = CookieBrowser.current()
+        let usedCookies = jobs[i].needsCookies
+        // any sign-in ERROR in the run triggers the cookie retry; the shown hint follows the last ERROR line
+        let signInSeen = failedRun
+            && ErrorHint.classify(errorLog.text, cookiesBrowser: currentBrowser, usedCookies: usedCookies)?.isSignIn == true
         let hint = failedRun
-            ? ErrorHint.classify(
-                errorText, cookiesBrowser: currentBrowser, usedCookies: jobs[i].needsCookies)
+            ? ErrorHint.classifyForDisplay(
+                errorText: errorLog.text, lastError: errorLog.lastError,
+                cookiesBrowser: currentBrowser, usedCookies: usedCookies)
             : nil
-        if wasCancelled {
+        let failedItems = jobs[i].playlist?.failed ?? []
+        let action = QueueLogic.nextAction(
+            FinishFacts(
+                wasCancelled: wasCancelled, exitCode: code, isPlaylist: jobs[i].playlist != nil,
+                failedItems: failedItems.count,
+                allFailuresTransient: failedItems.allSatisfy { DownloadJob.isTransient($0.detail) },
+                signInSeen: signInSeen, cookieBrowserAvailable: currentBrowser != nil,
+                needsCookies: usedCookies, autoRetried: jobs[i].autoRetried,
+                lastErrorTransient: DownloadJob.isTransient(lastErrorLine.map { PlaylistTracker.reason(from: $0) })))
+        switch action {
+        case .cancelled:
             jobs[i].state = .cancelled
-        } else if hint?.isSignIn == true, let browser = currentBrowser, !jobs[i].needsCookies {
+        case .retryWithCookies:
             // a sign-in wall and the person opted in: run this job once more with their browser's cookies
             jobs[i].needsCookies = true
-            if let failed = jobs[i].playlist?.failed.map(\.id), !failed.isEmpty { jobs[i].only = failed }
+            if !failedItems.isEmpty { jobs[i].only = failedItems.map(\.id) }
             jobs[i].state = .queued
-            status = "Signing in with \(browser.displayName)…"
-        } else if let playlist = jobs[i].playlist, !jobs[i].autoRetried,
-            !playlist.failed.isEmpty, playlist.failed.allSatisfy({ DownloadJob.isTransient($0.detail) })
-        {
+            let name = currentBrowser?.displayName ?? "browser"
+            startNotes[id] = "Retrying…"  // the row's status then reads "\(name) sign-in · Retrying…"
+            status = "Signing in with \(name)…"
+        case .retryPlaylistFailures:
             // a network hiccup: try just the failed videos once more
             jobs[i].autoRetried = true
-            jobs[i].only = playlist.failed.map(\.id)
+            jobs[i].only = failedItems.map(\.id)
             jobs[i].state = .queued
-            status = "Retrying \(playlist.failed.count) that hit a network error…"
-        } else if jobs[i].playlist == nil, code != 0, !jobs[i].autoRetried,
-            DownloadJob.isTransient(lastErrorLine.map { PlaylistTracker.reason(from: $0) })
-        {
+            startNotes[id] = "Retrying \(failedItems.count) that hit a network error…"
+            status = "Retrying \(failedItems.count) that hit a network error…"
+        case .retrySingle:
             jobs[i].autoRetried = true
             jobs[i].state = .queued
+            startNotes[id] = "Retrying after a network error…"
             status = "Retrying after a network error…"
-        } else if let playlist = jobs[i].playlist {
-            if playlist.failed.isEmpty && code == 0 {
-                jobs[i].state = .done
-                completions += 1
-            } else {
+        case .playlistDone:
+            jobs[i].state = .done
+            completions += 1
+        case .playlistFailed:
+            if let playlist = jobs[i].playlist {
                 jobs[i].state = .failed
                 jobs[i].detail = "\(playlist.doneCount) of \(playlist.total) downloaded."
                     + (hint.map { " " + $0.message } ?? "")
@@ -567,11 +643,11 @@ final class DownloadManager: ObservableObject {
                 jobs[i].suggestsFullDiskAccess = hint?.needsFullDiskAccess ?? false
                 hadError = true
             }
-        } else if code == 0 {
+        case .done:
             jobs[i].state = .done
             jobs[i].fraction = 1
             completions += 1
-        } else {
+        case .failed:
             jobs[i].state = .failed
             jobs[i].detail =
                 hint?.message ?? lastErrorLine.map { PlaylistTracker.reason(from: $0) } ?? "Failed (code \(code))"
@@ -641,14 +717,18 @@ final class DownloadManager: ObservableObject {
 }
 
 /// Holds a look-up's stderr between threads. Kept in memory only, never written anywhere.
+/// Only ERROR and WARNING lines are kept, bounded separately (see `ErrorLog`).
 private final class ErrorCollector: @unchecked Sendable {
     private let lock = NSLock()
     private var value = ""
 
     func set(_ data: Data) {
-        let text = String(decoding: data.prefix(65_536), as: UTF8.self)
+        var log = ErrorLog()
+        for line in String(decoding: data, as: UTF8.self).split(whereSeparator: \.isNewline) {
+            log.consume(String(line))
+        }
         lock.lock()
-        value = text
+        value = log.text
         lock.unlock()
     }
 
@@ -656,18 +736,5 @@ private final class ErrorCollector: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return value
-    }
-}
-
-/// Collects pipe output and hands back only complete lines (yt-dlp separates
-/// progress updates with \r or \n). Used from one readability handler at a time.
-private final class LineBuffer: @unchecked Sendable {
-    private var pending = ""
-
-    func append(_ chunk: String) -> [String] {
-        pending += chunk
-        var parts = pending.components(separatedBy: CharacterSet(charactersIn: "\r\n"))
-        pending = parts.removeLast()
-        return parts.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
     }
 }

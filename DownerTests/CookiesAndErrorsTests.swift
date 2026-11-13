@@ -24,10 +24,11 @@ struct ErrorHintTests {
     }
 
     @Test func signInMessages() {
-        let off = hint("Sign in to confirm you're not a bot")
+        let off = hint("ERROR: [youtube] x: Sign in to confirm you're not a bot")
         #expect(off?.message == "YouTube wants you signed in. Turn on Sign-in in Settings.")
+        #expect(hint("Sign in to confirm you're not a bot")?.message == "This site wants you signed in. Turn on Sign-in in Settings.")
         #expect(off?.needsSignInSetting == true)
-        let used = hint("Sign in to confirm you're not a bot", .chrome, used: true)
+        let used = hint("[youtube] Sign in to confirm you're not a bot", .chrome, used: true)
         #expect(used?.message == "Still blocked. Sign in to YouTube in Chrome, then retry.")
         #expect(used?.needsSignInSetting == false)
     }
@@ -53,7 +54,7 @@ struct ErrorHintTests {
     @Test func browserNotFound() {
         let h = hint("ERROR: could not find firefox cookies database in /x", .firefox)
         #expect(h == .browserNotFound(browser: .firefox))
-        #expect(h?.message == "Couldn't find Firefox's cookies. Open Firefox, sign in to YouTube, then retry.")
+        #expect(h?.message == "Couldn't find Firefox's cookies. Open Firefox, sign in, then retry.")
         #expect(hint("could not find the video") == nil)
     }
 
@@ -70,7 +71,7 @@ struct ErrorHintTests {
     @Test func rateLimitedAndUnavailable() {
         #expect(hint("This content isn't available, try again later") == .rateLimited)
         #expect(hint("rate-limited by YouTube") == .rateLimited)
-        #expect(ErrorHint.rateLimited.message == "YouTube is limiting requests. Try again later.")
+        #expect(ErrorHint.rateLimited.message == "The site is limiting requests. Try again later.")
         for text in ["Video unavailable", "Private video", "This video is not available"] {
             #expect(hint(text) == .unavailable, "\(text)")
         }
