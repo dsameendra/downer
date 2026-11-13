@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Merged with the keys Xcode generates (GENERATE_INFOPLIST_FILE). Sparkle 2 update settings. -->
+	<key>SUFeedURL</key>
+	<string>$(DOWNER_SU_FEED_URL)</string>
+	<key>SUPublicEDKey</key>
+	<string>$(DOWNER_SU_PUBLIC_ED_KEY)</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
+	<key>SUEnableSystemProfiling</key>
+	<false/>
+	<key>SUAllowsAutomaticUpdates</key>
+	<true/>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
+</dict>
+</plist>

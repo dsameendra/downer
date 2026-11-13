@@ -13,7 +13,6 @@ struct SettingsView: View {
     @AppStorage("backgroundGlow") private var backgroundGlow = true
     @AppStorage(Haptics.storageKey) private var hapticsOn = true
     @AppStorage(AppearanceMode.storageKey) private var appearanceRaw = AppearanceMode.system.rawValue
-    @AppStorage(UpdateChecker.autoCheckKey) private var autoCheckUpdates = true
     @AppStorage("extraArguments") private var extraArgumentsText = ""
     // browser sign-in: off unless the consent sheet's "Turn on" sets it
     @AppStorage("cookiesEnabled") private var cookiesEnabled = false
@@ -271,7 +270,7 @@ struct SettingsView: View {
                     Text("Check for updates automatically")
                         .font(.system(size: 14))
                     Spacer(minLength: 0)
-                    Toggle("Check for updates automatically", isOn: $autoCheckUpdates)
+                    Toggle("Check for updates automatically", isOn: autoCheckBinding)
                         .labelsHidden()
                         .toggleStyle(.switch)
                 }
@@ -281,23 +280,21 @@ struct SettingsView: View {
                 .overlay(alignment: .bottom) { Divider().opacity(0.6).padding(.horizontal, 14) }
 
                 HStack(spacing: 8) {
-                    updateResult
+                    updateStatus
                         .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
-                    if updates.isChecking {
-                        ProgressView().controlSize(.small).frame(width: 70)
-                    } else {
-                        Button("Check now") { Task { await updates.check() } }
-                            .buttonStyle(PillButtonStyle())
-                    }
+                    Button("Check now") { updates.checkForUpdates() }
+                        .buttonStyle(PillButtonStyle())
+                        .disabled(!updates.isConfigured || !updates.canCheck)
                 }
                 .padding(.leading, 14)
                 .padding(.trailing, 8)
                 .frame(minHeight: 44)
             }
-            Text("Only contacts GitHub. Nothing is downloaded or installed automatically.")
+            Text("Downer checks GitHub for new releases. Updates are signed and verified before they are installed.")
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -305,23 +302,21 @@ struct SettingsView: View {
         }
     }
 
+    private var autoCheckBinding: Binding<Bool> {
+        Binding(
+            get: { updates.automaticChecks },
+            set: { updates.automaticChecks = $0 }
+        )
+    }
+
     @ViewBuilder
-    private var updateResult: some View {
-        if let error = updates.lastError {
-            Text(error).foregroundStyle(Color.orange)
-        } else if updates.updateAvailable, let release = updates.latest {
-            HStack(spacing: 4) {
-                Text("Downer \(release.version) is available —")
-                    .foregroundStyle(.secondary)
-                Button("View release") { updates.openReleasePage() }
-                    .buttonStyle(.link)
-            }
-        } else if updates.hasChecked {
-            Text("Downer \(UpdateChecker.currentVersion) is up to date")
-                .foregroundStyle(.secondary)
+    private var updateStatus: some View {
+        if !updates.isConfigured {
+            Text("Downer \(UpdateChecker.currentVersion). Updates are not set up in this build.")
+        } else if let last = updates.lastChecked {
+            Text("Downer \(UpdateChecker.currentVersion). Last checked \(last.formatted(date: .abbreviated, time: .shortened))")
         } else {
-            Text("Downer \(UpdateChecker.currentVersion)")
-                .foregroundStyle(.secondary)
+            Text("Downer \(UpdateChecker.currentVersion). Not checked yet")
         }
     }
 

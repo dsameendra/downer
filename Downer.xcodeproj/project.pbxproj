@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		4529559B2DB17AB9000E4C76 /* KeyboardShortcuts in Frameworks */ = {isa = PBXBuildFile; productRef = 4529559A2DB17AB9000E4C76 /* KeyboardShortcuts */; };
+		A1B2C3D42EB0000100000001 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D42EB0000100000002 /* Sparkle */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -57,6 +58,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				4529559B2DB17AB9000E4C76 /* KeyboardShortcuts in Frameworks */,
+				A1B2C3D42EB0000100000001 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -118,6 +120,7 @@
 			name = Downer;
 			packageProductDependencies = (
 				4529559A2DB17AB9000E4C76 /* KeyboardShortcuts */,
+				A1B2C3D42EB0000100000002 /* Sparkle */,
 			);
 			productName = Downer;
 			productReference = 452955622DB0FF7D000E4C76 /* Downer.app */;
@@ -203,6 +206,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				452955992DB17AB9000E4C76 /* XCRemoteSwiftPackageReference "KeyboardShortcuts" */,
+				A1B2C3D42EB0000100000003 /* XCRemoteSwiftPackageReference "Sparkle" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 452955632DB0FF7D000E4C76 /* Products */;
@@ -413,6 +417,9 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				DOWNER_SU_FEED_URL = "https://github.com/dsameendra/downer/releases/latest/download/appcast.xml";
+				DOWNER_SU_PUBLIC_ED_KEY = "REPLACE_WITH_SPARKLE_PUBLIC_ED_KEY";
+				INFOPLIST_FILE = Config/Downer-Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -444,6 +451,9 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				DOWNER_SU_FEED_URL = "https://github.com/dsameendra/downer/releases/latest/download/appcast.xml";
+				DOWNER_SU_PUBLIC_ED_KEY = "REPLACE_WITH_SPARKLE_PUBLIC_ED_KEY";
+				INFOPLIST_FILE = Config/Downer-Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -578,6 +588,14 @@
 				minimumVersion = 3.1.0;
 			};
 		};
+		A1B2C3D42EB0000100000003 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.10.1;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -585,6 +603,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 452955992DB17AB9000E4C76 /* XCRemoteSwiftPackageReference "KeyboardShortcuts" */;
 			productName = KeyboardShortcuts;
+		};
+		A1B2C3D42EB0000100000002 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1B2C3D42EB0000100000003 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

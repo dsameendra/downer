@@ -231,6 +231,14 @@ The first time Downer saves into a protected folder such as Downloads, macOS ask
 
 This builds a universal Release app, signs it ad hoc, draws the installer window and writes `dist/Downer-<version>.dmg` with a checksum next to it. It needs Xcode and Python 3; the DMG tool is installed into `dist/.venv` the first time.
 
+Updates are delivered by [Sparkle](https://sparkle-project.org). Setting it up once:
+
+1. Run `generate_keys` from the Sparkle package (after one Xcode build it is at `<DerivedData>/Downer-*/SourcePackages/artifacts/sparkle/Sparkle/bin/generate_keys`). It stores the private key in your login Keychain and prints the public key.
+2. Paste the public key into `DOWNER_SU_PUBLIC_ED_KEY` in `Downer.xcodeproj` (the app target's build settings). `make-dmg.sh` refuses to build while it is still the placeholder.
+3. Back up the private key (`generate_keys -x key-file`) somewhere safe. Without it, installed copies can never be updated.
+
+For every release the script also signs the DMG with that key and writes `dist/appcast.xml`. Upload the DMG, its `.sha256` and `appcast.xml` to the GitHub release `v<version>`; installed copies read `releases/latest/download/appcast.xml`. Raise `CURRENT_PROJECT_VERSION` for every release: Sparkle compares that number, not the version name. Set `SPARKLE_ED_KEY_FILE` to sign with an exported key file instead of the Keychain.
+
 ### How it is put together
 
 | File | Role |

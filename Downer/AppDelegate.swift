@@ -74,7 +74,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
         let dl = DownloadManager.shared
         let deps = DependencyManager.shared
         dl.objectWillChange
-            .merge(with: deps.objectWillChange)
+            .merge(with: deps.objectWillChange, UpdateChecker.shared.objectWillChange)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.updateStatusItem() }
             .store(in: &cancellables)
@@ -88,7 +88,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
             self?.togglePopover(nil)
         }
 
-        UpdateChecker.shared.checkOnLaunchIfDue()
+        UpdateChecker.shared.start()
     }
 
     // MARK: Menu bar icon
@@ -121,7 +121,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
             }
         } else if showingDone {
             state = .done
-        } else if dl.hadError || (deps.hasCheckedOnce && !deps.missing.isEmpty) {
+        } else if dl.hadError || (deps.hasCheckedOnce && !deps.missing.isEmpty)
+            || UpdateChecker.shared.updatePending
+        {
             state = .attention
         } else {
             state = .idle
@@ -152,6 +154,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
                 keyEquivalent: ""
             )
         )
+
+        let updates = UpdateChecker.shared
+        let check = NSMenuItem(
+            title: updates.updatePending ? "Update Available…" : "Check for Updates…",
+            action: #selector(checkForUpdates),
+            keyEquivalent: ""
+        )
+        check.isEnabled = updates.isConfigured && updates.canCheck
+        menu.addItem(check)
 
         menu.addItem(.separator())
 
@@ -238,6 +249,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
         mainWindow!.makeKeyAndOrderFront(nil)
     }
     
+    @objc private func checkForUpdates() {
+        UpdateChecker.shared.checkForUpdates()
+    }
+
     // Quit handler
     @objc private func quitApp() {
         NSApp.terminate(nil)
