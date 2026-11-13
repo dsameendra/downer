@@ -92,7 +92,7 @@ struct PopOverView: View {
         }
         .padding(16)
         .offset(y: -RubberBand.resist(abs(pull), range: 18) * (pull >= 0 ? 1 : -1))
-        .frame(width: 360, height: 180)
+        .frame(width: 360, height: 196)  // room for a two-line status
         .background(TrackpadScrollRegion(handlers: swipeHandlers))
         .tint(Brand.red)
     }

@@ -73,6 +73,8 @@ struct DownloadJob: Identifiable, Equatable {
     var needsCookies = false
     /// The failure is fixed by turning on Sign-in in Settings (never turned on automatically).
     var suggestsSignInSetting = false
+    /// The failure is fixed by giving Downer Full Disk Access (Safari's cookies).
+    var suggestsFullDiskAccess = false
 
     var isPlaylist: Bool { playlist != nil }
     var isFinished: Bool { state == .done || state == .failed || state == .cancelled }

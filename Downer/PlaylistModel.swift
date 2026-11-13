@@ -217,7 +217,7 @@ struct PlaylistTracker {
         if let colon = text.range(of: ": "), text[..<colon.lowerBound].count <= 16 {
             text = String(text[colon.upperBound...])  // drop "abc123: "
         }
-        return String(text.prefix(80))
+        return String(text.prefix(140))  // the views show two lines and the rest in a tooltip
     }
 }
 

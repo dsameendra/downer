@@ -279,6 +279,8 @@ final class DownloadManager: ObservableObject {
         proc.executableURL = URL(fileURLWithPath: ytDlp)
         proc.arguments = YtDlpArguments.build(
             for: options, purpose: .probe(only: only), useCookies: useCookies, url: url)
+        proc.environment = YtDlpEnvironment.make(
+            base: ProcessInfo.processInfo.environment, ffmpegDirectory: nil, home: FullDiskAccess.realHome())
         let pipe = Pipe()
         let errorPipe = Pipe()
         proc.standardOutput = pipe
@@ -364,11 +366,11 @@ final class DownloadManager: ObservableObject {
             return
         }
         guard fm.isExecutableFile(atPath: ytDlpPath) else {
-            stop("yt‑dlp not found.\nInstall it in Settings → Requirements.")
+            stop("yt‑dlp not found. Install it in Settings.")
             return
         }
         guard fm.isExecutableFile(atPath: ffmpegPath), fm.isExecutableFile(atPath: ffprobePath) else {
-            stop("ffmpeg / ffprobe not found.\nInstall them in Settings → Requirements.")
+            stop("ffmpeg not found. Install it in Settings.")
             return
         }
 
@@ -387,9 +389,10 @@ final class DownloadManager: ObservableObject {
         proc.executableURL = URL(fileURLWithPath: ytDlpPath)
         proc.arguments = args
         proc.currentDirectoryURL = job.options.folder
-        var env = ProcessInfo.processInfo.environment
-        env["PATH"] = "\((ffmpegPath as NSString).deletingLastPathComponent):" + (env["PATH"] ?? "")
-        proc.environment = env
+        proc.environment = YtDlpEnvironment.make(
+            base: ProcessInfo.processInfo.environment,
+            ffmpegDirectory: (ffmpegPath as NSString).deletingLastPathComponent,
+            home: FullDiskAccess.realHome())
 
         let pipe = Pipe()
         proc.standardOutput = pipe
@@ -423,6 +426,7 @@ final class DownloadManager: ObservableObject {
         jobs[i].state = .running
         jobs[i].detail = nil
         jobs[i].suggestsSignInSetting = false
+        jobs[i].suggestsFullDiskAccess = false
         runningID = id
         process = proc
         status = queuePrefix() + "Starting download…"
@@ -432,7 +436,7 @@ final class DownloadManager: ObservableObject {
         } catch {
             process = nil
             runningID = nil
-            stop("Could not start yt‑dlp: \(error.localizedDescription)")
+            stop("Couldn't start yt‑dlp. \(error.localizedDescription)")
         }
     }
 
@@ -493,12 +497,12 @@ final class DownloadManager: ObservableObject {
     }
 
     /// "Link 2 of 5 · " when several links are queued.
-    /// Also says "Using Safari sign-in · " while the running job borrows a browser's cookies.
+    /// Also says "Safari sign-in · " while the running job borrows a browser's cookies.
     private func queuePrefix() -> String {
         guard let running = jobs.firstIndex(where: { $0.id == runningID }) else { return "" }
         var prefix = jobs.count > 1 ? "Link \(running + 1) of \(jobs.count) · " : ""
         if jobs[running].needsCookies, let browser = CookieBrowser.current() {
-            prefix += "Using \(browser.displayName) sign-in · "
+            prefix += "\(browser.displayName) sign-in · "
         }
         return prefix
     }
@@ -557,9 +561,10 @@ final class DownloadManager: ObservableObject {
                 completions += 1
             } else {
                 jobs[i].state = .failed
-                jobs[i].detail = "\(playlist.doneCount) of \(playlist.total) downloaded"
-                    + (hint.map { " · " + $0.message } ?? "")
+                jobs[i].detail = "\(playlist.doneCount) of \(playlist.total) downloaded."
+                    + (hint.map { " " + $0.message } ?? "")
                 jobs[i].suggestsSignInSetting = hint?.needsSignInSetting ?? false
+                jobs[i].suggestsFullDiskAccess = hint?.needsFullDiskAccess ?? false
                 hadError = true
             }
         } else if code == 0 {
@@ -571,6 +576,7 @@ final class DownloadManager: ObservableObject {
             jobs[i].detail =
                 hint?.message ?? lastErrorLine.map { PlaylistTracker.reason(from: $0) } ?? "Failed (code \(code))"
             jobs[i].suggestsSignInSetting = hint?.needsSignInSetting ?? false
+            jobs[i].suggestsFullDiskAccess = hint?.needsFullDiskAccess ?? false
             hadError = true
         }
         let stopped = stopQueue && wasCancelled
@@ -591,7 +597,7 @@ final class DownloadManager: ObservableObject {
             status = "Download cancelled."
         } else if jobs.contains(where: { $0.state == .failed }) {
             if jobs.count == 1, !jobs[0].isPlaylist {
-                status = "Download failed.\n" + (jobs[0].detail ?? "")
+                status = "Download failed. " + (jobs[0].detail ?? "")
             } else {
                 let failed = max(s.failedUnits, jobs.filter { $0.state == .failed }.count)
                 status = "\(s.doneUnits) of \(s.units) downloaded · \(failed) failed"

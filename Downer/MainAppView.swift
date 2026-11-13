@@ -182,20 +182,27 @@ struct MainAppView: View {
     /// Offered only after a link failed for want of a sign-in; opening Settings is the person's choice.
     @ViewBuilder
     private var signInBanner: some View {
-        if dl.jobs.contains(where: { $0.state == .failed && $0.suggestsSignInSetting }) {
+        let needsAccess = dl.jobs.contains { $0.state == .failed && $0.suggestsFullDiskAccess }
+        if needsAccess || dl.jobs.contains(where: { $0.state == .failed && $0.suggestsSignInSetting }) {
             HStack(spacing: 10) {
-                Image(systemName: "person.crop.circle.badge.exclamationmark")
+                Image(systemName: needsAccess ? "lock.shield" : "person.crop.circle.badge.exclamationmark")
                     .foregroundStyle(.orange)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("Sign-in needed")
+                    Text(needsAccess ? "Full Disk Access needed" : "Sign-in needed")
                         .font(.system(size: 13, weight: .semibold))
-                    Text("Turn on Sign-in in Settings to try again.")
+                    Text(needsAccess ? "Allow Downer, then quit and reopen it." : "Turn on Sign-in in Settings to try again.")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
+                        .lineLimit(2)
                 }
-                Spacer()
-                SettingsLink { Text("Open Settings") }
-                    .buttonStyle(PillButtonStyle())
+                Spacer(minLength: 8)
+                if needsAccess {
+                    Button("Open Settings") { FullDiskAccess.openSettings() }
+                        .buttonStyle(PillButtonStyle())
+                } else {
+                    SettingsLink { Text("Open Settings") }
+                        .buttonStyle(PillButtonStyle())
+                }
             }
             .padding(.leading, 14)
             .padding(.trailing, 10)
@@ -468,7 +475,8 @@ struct MainAppView: View {
             DownloadStatusLine(
                 status: dl.status,
                 isDownloading: dl.isActive,
-                completions: dl.completions
+                completions: dl.completions,
+                maxLines: 3
             )
             .frame(minHeight: 18)
 

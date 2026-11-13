@@ -25,10 +25,10 @@ struct ErrorHintTests {
 
     @Test func signInMessages() {
         let off = hint("Sign in to confirm you're not a bot")
-        #expect(off?.message == "YouTube wants a signed-in session. Turn on Sign-in in Settings.")
+        #expect(off?.message == "YouTube wants you signed in. Turn on Sign-in in Settings.")
         #expect(off?.needsSignInSetting == true)
         let used = hint("Sign in to confirm you're not a bot", .chrome, used: true)
-        #expect(used?.message == "Still blocked. Make sure you're signed in to YouTube in Chrome.")
+        #expect(used?.message == "Still blocked. Sign in to YouTube in Chrome, then retry.")
         #expect(used?.needsSignInSetting == false)
     }
 
@@ -37,8 +37,9 @@ struct ErrorHintTests {
         #expect(hint("[Errno 13] Permission denied: Cookies.binarycookies") == .safariAccess)
         #expect(hint("Operation not permitted: '/tmp/file'") == nil)
         #expect(hint("Cookies.binarycookies") == nil)
-        #expect(ErrorHint.safariAccess.message
-            == "Safari's cookies need Full Disk Access for Downer — or choose another browser in Settings.")
+        #expect(ErrorHint.safariAccess.message == "Downer needs Full Disk Access to use Safari's sign-in.")
+        #expect(ErrorHint.safariAccess.needsFullDiskAccess)
+        #expect(!ErrorHint.keychain(browser: .safari).needsFullDiskAccess)
     }
 
     @Test func keychain() {
@@ -46,13 +47,13 @@ struct ErrorHintTests {
             #expect(hint(text, .brave) == .keychain(browser: .brave))
         }
         #expect(hint("failed to decrypt cookie", .brave)?.message
-            == "Downer couldn't unlock Brave's cookies — allow the Keychain prompt, or choose another browser.")
+            == "Allow Keychain access to use Brave's sign-in.")
     }
 
     @Test func browserNotFound() {
         let h = hint("ERROR: could not find firefox cookies database in /x", .firefox)
         #expect(h == .browserNotFound(browser: .firefox))
-        #expect(h?.message == "Couldn't find Firefox's cookies. Is it installed and have you signed in?")
+        #expect(h?.message == "Couldn't find Firefox's cookies. Open Firefox, sign in to YouTube, then retry.")
         #expect(hint("could not find the video") == nil)
     }
 
@@ -63,13 +64,13 @@ struct ErrorHintTests {
         ] {
             #expect(hint(text) == .outdated, "\(text)")
         }
-        #expect(ErrorHint.outdated.message == "yt-dlp may be out of date — update it in Settings → Requirements.")
+        #expect(ErrorHint.outdated.message == "yt-dlp may be out of date. Update it in Settings.")
     }
 
     @Test func rateLimitedAndUnavailable() {
         #expect(hint("This content isn't available, try again later") == .rateLimited)
         #expect(hint("rate-limited by YouTube") == .rateLimited)
-        #expect(ErrorHint.rateLimited.message == "YouTube is rate-limiting requests. Try again in a while.")
+        #expect(ErrorHint.rateLimited.message == "YouTube is limiting requests. Try again later.")
         for text in ["Video unavailable", "Private video", "This video is not available"] {
             #expect(hint(text) == .unavailable, "\(text)")
         }
@@ -98,6 +99,15 @@ struct ErrorHintTests {
         #expect(hint("") == nil)
         #expect(hint("ERROR: something strange happened") == nil)
         #expect(hint("[download] 42% of 10MiB") == nil)
+    }
+
+    @Test func messagesAreShort() {
+        let all: [ErrorHint] = [
+            .signIn(browser: nil, usedCookies: false), .signIn(browser: .brave, usedCookies: true),
+            .safariAccess, .keychain(browser: .brave), .browserNotFound(browser: .chromium),
+            .outdated, .rateLimited, .unavailable,
+        ]
+        for hint in all { #expect(hint.message.count <= 80, "\(hint.message)") }
     }
 
     @Test func missingBrowserFallsBackToGenericName() {
@@ -157,6 +167,64 @@ struct CookieBrowserTests {
         suite.set(true, forKey: "cookiesEnabled")
         suite.set("not-a-browser", forKey: "cookiesBrowser")
         #expect(CookieBrowser.current(suite) == nil)
+    }
+}
+
+struct FullDiskAccessTests {
+    @Test func candidatePathsTryLegacyThenContainer() {
+        let paths = FullDiskAccess.candidatePaths(home: "/Users/x")
+        #expect(paths == [
+            "/Users/x/Library/Cookies/Cookies.binarycookies",
+            "/Users/x/Library/Containers/com.apple.Safari/Data/Library/Cookies/Cookies.binarycookies",
+        ])
+    }
+
+    @Test func statusFromAttempts() {
+        #expect(FullDiskAccess.status(fromAttempts: [ENOENT, nil]) == .granted)
+        #expect(FullDiskAccess.status(fromAttempts: [nil, nil]) == .granted)
+        #expect(FullDiskAccess.status(fromAttempts: [ENOENT, EPERM]) == .denied)
+        #expect(FullDiskAccess.status(fromAttempts: [EACCES, ENOENT]) == .denied)
+        #expect(FullDiskAccess.status(fromAttempts: [ENOENT, ENOENT]) == .noCookieFile)
+        #expect(FullDiskAccess.status(fromAttempts: []) == .noCookieFile)
+    }
+
+    @Test func settingsLinksTargetFullDiskAccess() {
+        #expect(FullDiskAccess.settingsURLs.count == 2)
+        for url in FullDiskAccess.settingsURLs {
+            #expect(url.scheme == "x-apple.systempreferences")
+            #expect(url.absoluteString.hasSuffix("?Privacy_AllFiles"))
+        }
+    }
+}
+
+struct YtDlpEnvironmentTests {
+    @Test func homeIsForcedAndXdgDropped() {
+        let base = [
+            "HOME": "/private/tmp/fake", "XDG_CONFIG_HOME": "/x", "XDG_DATA_HOME": "/y",
+            "PATH": "/usr/bin", "LANG": "en_US.UTF-8", "TMPDIR": "/var/folders/t/",
+        ]
+        let env = YtDlpEnvironment.make(base: base, ffmpegDirectory: "/opt/homebrew/bin", home: "/Users/x")
+        #expect(env["HOME"] == "/Users/x")
+        #expect(env.keys.allSatisfy { !$0.hasPrefix("XDG_") })
+        #expect(env["PATH"] == "/opt/homebrew/bin:/usr/bin")
+        #expect(env["LANG"] == "en_US.UTF-8")
+        #expect(env["TMPDIR"] == "/var/folders/t/")
+    }
+
+    @Test func pathUntouchedWithoutFfmpegDirectory() {
+        let env = YtDlpEnvironment.make(base: ["PATH": "/usr/bin"], ffmpegDirectory: nil, home: "/Users/x")
+        #expect(env["PATH"] == "/usr/bin")
+    }
+}
+
+struct FailureReasonTests {
+    @Test func prefixIsStripped() {
+        #expect(PlaylistTracker.reason(from: "ERROR: [youtube] abc123: Video unavailable") == "Video unavailable")
+    }
+
+    @Test func longReasonsAreCapped() {
+        let long = "ERROR: [youtube] abc123: " + String(repeating: "x", count: 400)
+        #expect(PlaylistTracker.reason(from: long).count == 140)
     }
 }
 

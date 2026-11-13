@@ -53,26 +53,30 @@ enum ErrorHint: Equatable {
         return false
     }
 
+    /// One short sentence (about 70 characters or fewer) so it fits on two lines of the status line.
     var message: String {
         switch self {
         case .signIn(let browser, _):
             // With a browser chosen the run has (or will have) used it, so the cookies did not help.
-            if browser == nil { return "YouTube wants a signed-in session. Turn on Sign-in in Settings." }
-            return "Still blocked. Make sure you're signed in to YouTube in \(Self.name(browser))."
+            if browser == nil { return "YouTube wants you signed in. Turn on Sign-in in Settings." }
+            return "Still blocked. Sign in to YouTube in \(Self.name(browser)), then retry."
         case .safariAccess:
-            return "Safari's cookies need Full Disk Access for Downer — or choose another browser in Settings."
+            return "Downer needs Full Disk Access to use Safari's sign-in."
         case .keychain(let browser):
-            return "Downer couldn't unlock \(Self.name(browser))'s cookies — allow the Keychain prompt, or choose another browser."
+            return "Allow Keychain access to use \(Self.name(browser))'s sign-in."
         case .browserNotFound(let browser):
-            return "Couldn't find \(Self.name(browser))'s cookies. Is it installed and have you signed in?"
+            return "Couldn't find \(Self.name(browser))'s cookies. Open \(Self.name(browser)), sign in to YouTube, then retry."
         case .outdated:
-            return "yt-dlp may be out of date — update it in Settings → Requirements."
+            return "yt-dlp may be out of date. Update it in Settings."
         case .rateLimited:
-            return "YouTube is rate-limiting requests. Try again in a while."
+            return "YouTube is limiting requests. Try again later."
         case .unavailable:
             return "This video is unavailable."
         }
     }
+
+    /// True when the fix is Full Disk Access, so the UI can offer to open that Settings pane.
+    var needsFullDiskAccess: Bool { self == .safariAccess }
 
     /// True when the fix is the Sign-in switch, so the UI can offer to open Settings.
     var needsSignInSetting: Bool {

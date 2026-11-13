@@ -17,7 +17,7 @@ Liquid Glass redesign of Downer, approved from the "Downer Liquid Glass" design 
 
 ## Surfaces
 - Main window 460×700: URL capsule, type selector, Video / Audio groups, Save to, Information, floating dock (Download, progress, status).
-- Menu bar popover 360×180: system-drawn background, URL field with Paste, Download, status.
+- Menu bar popover 360×196: system-drawn background, URL field with Paste, Download, status.
 - Settings 400×560, scrolling: Appearance (theme, glow), Global Shortcut, Sign-in (browser cookies; switching on opens a consent sheet), Requirements (yt-dlp, ffmpeg, ffprobe, deno with Install / Update), Updates, Advanced (extra yt-dlp arguments).
 - Download queue: links (single videos, playlists, or both) can be added at any time, one after another, by pasting into the field and pressing Return or "Add to Queue". They are looked up first (titles, playlist or not) and downloaded one at a time in order. Each job keeps the settings it was added with. Failed network downloads retry once on their own.
 - Queue tray: shown when more than one link is queued or a playlist is downloading. The dock becomes a tray with a drag handle (peek 162, list 452, full 604 pt). Peek shows title, ring, overall bar and current item; pulled up shows every item with its state and Retry for failures. A lone single video keeps the dock.

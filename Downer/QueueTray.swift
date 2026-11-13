@@ -233,6 +233,8 @@ struct QueueTray: View {
                 .font(.system(size: 13))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+                .truncationMode(.tail)
+                .help(currentTitle)
                 .contentTransition(.opacity)
             Spacer(minLength: 0)
         }
@@ -608,7 +610,9 @@ private struct JobRow: View {
                 Text(detail)
                     .font(.system(size: 12).monospacedDigit())
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .lineLimit(2)  // a failure reason may need a second line; the row height is fixed
+                    .truncationMode(.tail)
+                    .help(detail)
                     .contentTransition(.numericText())
             }
             Spacer(minLength: 8)
@@ -754,7 +758,9 @@ private struct PlaylistRow: View {
                 Text(detail)
                     .font(.system(size: 12).monospacedDigit())
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .lineLimit(2)
+                    .truncationMode(.tail)
+                    .help(detail)
             }
             Spacer(minLength: 8)
             if item.state == .failed {
