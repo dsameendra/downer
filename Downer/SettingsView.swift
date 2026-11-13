@@ -151,7 +151,7 @@ struct SettingsView: View {
                 .padding(.vertical, 10)
                 .padding(.horizontal, 14)
             }
-            Text("Your arguments come after Downer's format options, so they can override them. Arguments that would break progress tracking or expose cookies are refused.")
+            Text("Your arguments come after Downer's format options, so they can override them. Only common download options are allowed, such as -t mp4, --limit-rate 2M, --embed-subs. Anything else is refused.")
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -162,7 +162,7 @@ struct SettingsView: View {
     @ViewBuilder
     private var extraArgumentsStatus: some View {
         if extraArgumentsText.trimmingCharacters(in: .whitespaces).isEmpty {
-            Text("Optional. Anything yt-dlp accepts, such as --limit-rate 2M.")
+            Text("Optional. For example --limit-rate 2M or --embed-subs.")
                 .foregroundStyle(.secondary)
         } else {
             switch ExtraArguments.tokenize(extraArgumentsText) {
@@ -184,9 +184,15 @@ struct SettingsView: View {
         var id: Self { self }
     }
 
-    private var chosenBrowser: CookieBrowser {
+    /// The browser Downer would really use: the stored one, only while it is installed.
+    /// nil means "Choose a browser" (never a silent substitute).
+    private var chosenBrowser: CookieBrowser? {
         CookieBrowser(rawValue: cookiesBrowserRaw).flatMap { $0.isInstalled ? $0 : nil }
-            ?? CookieBrowser.firstInstalled ?? .safari
+    }
+
+    /// What the consent sheet starts on: the stored browser if it is installed, else the first installed one.
+    private var suggestedBrowser: CookieBrowser {
+        chosenBrowser ?? CookieBrowser.firstInstalled ?? .safari
     }
 
     private var signInGroup: some View {
@@ -226,7 +232,7 @@ struct SettingsView: View {
                         Spacer(minLength: 0)
                         CookieBrowserMenu(
                             selection: Binding(
-                                get: { chosenBrowser }, set: { cookiesBrowserRaw = $0.rawValue }))
+                                get: { chosenBrowser }, set: { cookiesBrowserRaw = $0?.rawValue ?? "" }))
                     }
                     .padding(.leading, 14)
                     .padding(.trailing, 12)
@@ -234,10 +240,13 @@ struct SettingsView: View {
                     .overlay(alignment: .top) { Divider().opacity(0.6).padding(.horizontal, 14) }
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(chosenBrowser.permissionNote)
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                        Text(
+                            chosenBrowser?.permissionNote
+                                ?? "That browser isn't installed, so no cookies are used. Choose another to sign in."
+                        )
+                        .font(.system(size: 12))
+                        .foregroundStyle(chosenBrowser == nil ? Color.orange : Color.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                         if chosenBrowser == .safari { FullDiskAccessRow().padding(.vertical, 4) }
                         Button("What does this do?") { consent = .explain }
                             .buttonStyle(.link)
@@ -252,7 +261,7 @@ struct SettingsView: View {
         }
         .sheet(item: $consent) { mode in
             CookieConsentSheet(
-                browser: chosenBrowser,
+                browser: suggestedBrowser,
                 readOnly: mode == .explain,
                 onTurnOn: { browser in
                     cookiesBrowserRaw = browser.rawValue

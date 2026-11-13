@@ -10,8 +10,9 @@ import AppKit
 import SwiftUI
 
 /// A menu of browsers; ones that are not installed are shown but cannot be picked.
+/// A nil selection shows "Choose a browser" (nothing is used until one is picked).
 struct CookieBrowserMenu: View {
-    @Binding var selection: CookieBrowser
+    @Binding var selection: CookieBrowser?
 
     var body: some View {
         Menu {
@@ -28,49 +29,60 @@ struct CookieBrowserMenu: View {
                 .disabled(!browser.isInstalled)
             }
         } label: {
-            Text(selection.displayName)
+            Text(selection?.displayName ?? "Choose a browser")
         }
         .menuStyle(.button)
         .fixedSize()
     }
 }
 
-/// "Full Disk Access: granted / not granted" for Safari, with a button to the right Settings pane.
-/// Checked again whenever the app or one of its windows becomes active, so it updates after the person
-/// comes back from System Settings.
+/// The Safari permission, explained without looking: a button to the right Settings pane and the
+/// relaunch note. Nothing is probed here, so Safari's folder is not touched before Sign-in is on.
+struct FullDiskAccessHelp: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button("Open Full Disk Access Settings") { FullDiskAccess.openSettings() }
+                .buttonStyle(PillButtonStyle())
+            Text(FullDiskAccess.relaunchNote)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// "Full Disk Access: granted / not granted" for Safari. Only shown in Settings once Sign-in is on.
+/// Checked when it appears and whenever the app becomes active (for example after System Settings).
 struct FullDiskAccessRow: View {
-    @State private var status = FullDiskAccess.check()
+    @State private var status: FullDiskAccess.Status?
 
     private var granted: Bool { status == .granted }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Image(systemName: granted ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                    .foregroundStyle(granted ? Color.green : Color.orange)
-                Text(label)
-                    .font(.system(size: 12, weight: .medium))
-            }
-            if !granted {
-                Button("Open Full Disk Access Settings") { FullDiskAccess.openSettings() }
-                    .buttonStyle(PillButtonStyle())
-                Text(FullDiskAccess.relaunchNote)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+            if let status {
+                HStack(spacing: 6) {
+                    Image(systemName: granted ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                        .foregroundStyle(granted ? Color.green : Color.orange)
+                    Text(label(status))
+                        .font(.system(size: 12, weight: .medium))
+                }
+                if !granted { FullDiskAccessHelp() }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .onAppear { status = FullDiskAccess.check() }
+        .onAppear(perform: refresh)
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            status = FullDiskAccess.check()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
-            status = FullDiskAccess.check()
+            refresh()
         }
     }
 
-    private var label: String {
+    private func refresh() {
+        Task { status = await Task.detached { FullDiskAccess.check() }.value }
+    }
+
+    private func label(_ status: FullDiskAccess.Status) -> String {
         switch status {
         case .granted: "Full Disk Access: granted ✓"
         case .denied: "Full Disk Access: not granted"
@@ -115,11 +127,13 @@ struct CookieConsentSheet: View {
                         if readOnly {
                             Text(browser.displayName).foregroundStyle(.secondary)
                         } else {
-                            CookieBrowserMenu(selection: $browser)
+                            CookieBrowserMenu(
+                                selection: Binding(
+                                    get: { browser }, set: { if let chosen = $0 { browser = chosen } }))
                         }
                     }
                     point("macOS prompts", browser.permissionNote)
-                    if browser == .safari { FullDiskAccessRow() }
+                    if browser == .safari { FullDiskAccessHelp() }
 
                     point(
                         "Account risk",

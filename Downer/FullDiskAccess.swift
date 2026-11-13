@@ -73,14 +73,18 @@ enum FullDiskAccess {
 
 /// The environment yt-dlp is started with.
 enum YtDlpEnvironment {
-    /// Starts from the app's own environment and makes it safe for locating browser data:
-    /// HOME is the real home folder (yt-dlp builds every browser path from `~`), and XDG_* variables
-    /// that a launching terminal may carry are dropped. PATH gets ffmpeg's folder in front.
+    /// Starts from the app's own environment, with two changes. HOME is the real home folder
+    /// (yt-dlp builds every browser path from `~`). Variables that load code into the Python-based
+    /// yt-dlp (PYTHON*, such as PYTHONPATH, PYTHONHOME, PYTHONSTARTUP, PYTHONUSERBASE) or into any
+    /// process (DYLD_*) are dropped. Everything else stays, so proxies, locale, TMPDIR and
+    /// XDG_CONFIG_HOME (where yt-dlp looks for the user's config) keep working; on macOS yt-dlp finds
+    /// browser data under `~/Library`, never through XDG_*. PATH gets ffmpeg's folder in front.
     nonisolated static func make(base: [String: String], ffmpegDirectory: String?, home: String) -> [String: String] {
-        var env = base.filter { !$0.key.hasPrefix("XDG_") }
+        var env = base.filter { !$0.key.hasPrefix("PYTHON") && !$0.key.hasPrefix("DYLD_") }
         env["HOME"] = home
         if let ffmpegDirectory, !ffmpegDirectory.isEmpty {
-            env["PATH"] = ffmpegDirectory + ":" + (env["PATH"] ?? "")
+            let existing = env["PATH"] ?? ""
+            env["PATH"] = existing.isEmpty ? ffmpegDirectory : ffmpegDirectory + ":" + existing
         }
         return env
     }

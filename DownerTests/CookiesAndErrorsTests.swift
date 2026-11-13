@@ -140,6 +140,8 @@ struct CookieBrowserTests {
         let on = YtDlpArguments.build(for: o, purpose: .probe(only: nil), useCookies: true, url: "https://e.com")
         #expect(!off.contains("--cookies-from-browser"))
         #expect(on.contains("--cookies-from-browser"))
+        #expect(off.contains("--no-cookies") && off.contains("--no-cookies-from-browser"))
+        #expect(on.contains("--no-cookies") && !on.contains("--no-cookies-from-browser"))
         for arg in off + on {
             #expect(arg != "--cookies" && arg != "-v" && arg != "--verbose" && arg != "--print-traffic")
         }
@@ -156,18 +158,30 @@ struct CookieBrowserTests {
 
     @Test func currentBrowserFollowsTheLiveSetting() {
         let suite = UserDefaults(suiteName: "downer-cookie-test-\(UUID().uuidString)")!
-        #expect(CookieBrowser.current(suite) == nil)
+        let installed: (CookieBrowser) -> Bool = { _ in true }
+        #expect(CookieBrowser.current(suite, isInstalled: installed) == nil)
         suite.set("safari", forKey: "cookiesBrowser")
-        #expect(CookieBrowser.current(suite) == nil)  // browser alone does not enable it
+        #expect(CookieBrowser.current(suite, isInstalled: installed) == nil)  // browser alone does not enable it
         suite.set(true, forKey: "cookiesEnabled")
-        #expect(CookieBrowser.current(suite) == .safari)
+        #expect(CookieBrowser.current(suite, isInstalled: installed) == .safari)
         suite.set("firefox", forKey: "cookiesBrowser")  // changed after a link was queued
-        #expect(CookieBrowser.current(suite) == .firefox)
+        #expect(CookieBrowser.current(suite, isInstalled: installed) == .firefox)
         suite.set(false, forKey: "cookiesEnabled")  // switched off: queued links must not use cookies
-        #expect(CookieBrowser.current(suite) == nil)
+        #expect(CookieBrowser.current(suite, isInstalled: installed) == nil)
         suite.set(true, forKey: "cookiesEnabled")
         suite.set("not-a-browser", forKey: "cookiesBrowser")
-        #expect(CookieBrowser.current(suite) == nil)
+        #expect(CookieBrowser.current(suite, isInstalled: installed) == nil)
+    }
+
+    @Test func anUninstalledBrowserIsNeverSubstituted() {
+        let suite = UserDefaults(suiteName: "downer-cookie-test-\(UUID().uuidString)")!
+        suite.set(true, forKey: "cookiesEnabled")
+        suite.set("chrome", forKey: "cookiesBrowser")
+        #expect(CookieBrowser.current(suite, isInstalled: { $0 == .chrome }) == .chrome)
+        // Chrome was uninstalled; Firefox is still there, but is not used instead
+        #expect(CookieBrowser.current(suite, isInstalled: { $0 == .firefox }) == nil)
+        suite.set("chrome", forKey: "cookiesBrowser")
+        #expect(JobOptions.current(suite).cookiesBrowser == CookieBrowser.current(suite))
     }
 }
 
@@ -199,22 +213,49 @@ struct FullDiskAccessTests {
 }
 
 struct YtDlpEnvironmentTests {
-    @Test func homeIsForcedAndXdgDropped() {
+    @Test func homeIsForcedAndUserSettingsKept() {
         let base = [
-            "HOME": "/private/tmp/fake", "XDG_CONFIG_HOME": "/x", "XDG_DATA_HOME": "/y",
-            "PATH": "/usr/bin", "LANG": "en_US.UTF-8", "TMPDIR": "/var/folders/t/",
+            "HOME": "/private/tmp/fake", "XDG_CONFIG_HOME": "/x/config", "XDG_DATA_HOME": "/y",
+            "PATH": "/usr/bin", "LANG": "en_US.UTF-8", "LC_ALL": "en_US.UTF-8", "TMPDIR": "/var/folders/t/",
         ]
         let env = YtDlpEnvironment.make(base: base, ffmpegDirectory: "/opt/homebrew/bin", home: "/Users/x")
         #expect(env["HOME"] == "/Users/x")
-        #expect(env.keys.allSatisfy { !$0.hasPrefix("XDG_") })
+        #expect(env["XDG_CONFIG_HOME"] == "/x/config")  // where yt-dlp finds the user's config
+        #expect(env["XDG_DATA_HOME"] == "/y")
         #expect(env["PATH"] == "/opt/homebrew/bin:/usr/bin")
         #expect(env["LANG"] == "en_US.UTF-8")
+        #expect(env["LC_ALL"] == "en_US.UTF-8")
         #expect(env["TMPDIR"] == "/var/folders/t/")
+    }
+
+    @Test func proxiesArePreserved() {
+        let proxies = [
+            "HTTP_PROXY": "http://p:1", "HTTPS_PROXY": "http://p:2", "ALL_PROXY": "socks5://p:3", "NO_PROXY": "localhost",
+            "http_proxy": "http://p:1", "https_proxy": "http://p:2", "all_proxy": "socks5://p:3", "no_proxy": "localhost",
+        ]
+        let env = YtDlpEnvironment.make(base: proxies, ffmpegDirectory: nil, home: "/Users/x")
+        for (key, value) in proxies { #expect(env[key] == value, "\(key)") }
+    }
+
+    @Test func pythonAndLoaderInjectionIsDropped() {
+        let base = [
+            "PYTHONPATH": "/evil", "PYTHONHOME": "/evil", "PYTHONSTARTUP": "/evil.py", "PYTHONUSERBASE": "/evil",
+            "PYTHONBREAKPOINT": "os.system", "DYLD_INSERT_LIBRARIES": "/evil.dylib", "PATH": "/usr/bin",
+        ]
+        let env = YtDlpEnvironment.make(base: base, ffmpegDirectory: nil, home: "/Users/x")
+        #expect(env.keys.allSatisfy { !$0.hasPrefix("PYTHON") && !$0.hasPrefix("DYLD_") })
+        #expect(env["PATH"] == "/usr/bin")
     }
 
     @Test func pathUntouchedWithoutFfmpegDirectory() {
         let env = YtDlpEnvironment.make(base: ["PATH": "/usr/bin"], ffmpegDirectory: nil, home: "/Users/x")
         #expect(env["PATH"] == "/usr/bin")
+    }
+
+    @Test func missingPathGetsNoEmptyEntry() {
+        let env = YtDlpEnvironment.make(base: [:], ffmpegDirectory: "/opt/homebrew/bin", home: "/Users/x")
+        #expect(env["PATH"] == "/opt/homebrew/bin")
+        #expect(YtDlpEnvironment.make(base: [:], ffmpegDirectory: nil, home: "/Users/x")["PATH"] == nil)
     }
 }
 

@@ -43,16 +43,23 @@ enum CookieBrowser: String, CaseIterable, Identifiable, Codable {
         }
     }
 
-    var isInstalled: Bool {
+    nonisolated var isInstalled: Bool {
         NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) != nil
     }
 
-    /// The browser to borrow cookies from right now, or nil when Sign-in is off.
+    /// The browser to borrow cookies from right now, or nil when Sign-in is off or the chosen
+    /// browser is no longer installed (Downer never silently substitutes another browser's cookies).
     /// Read at the moment cookies would be used, so switching Sign-in off (or changing
     /// the browser) also applies to links that were queued earlier.
-    nonisolated static func current(_ defaults: UserDefaults = .standard) -> CookieBrowser? {
-        guard defaults.bool(forKey: "cookiesEnabled") else { return nil }
-        return CookieBrowser(rawValue: defaults.string(forKey: "cookiesBrowser") ?? "")
+    nonisolated static func current(
+        _ defaults: UserDefaults = .standard,
+        isInstalled: (CookieBrowser) -> Bool = { $0.isInstalled }
+    ) -> CookieBrowser? {
+        guard defaults.bool(forKey: "cookiesEnabled"),
+            let browser = CookieBrowser(rawValue: defaults.string(forKey: "cookiesBrowser") ?? ""),
+            isInstalled(browser)
+        else { return nil }
+        return browser
     }
 
     /// The first installed browser, in the order most people use them.
