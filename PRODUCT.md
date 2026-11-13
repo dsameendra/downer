@@ -26,7 +26,7 @@ Lives in the menu bar and a global shortcut, and shares one set of remembered de
 
 - Main window is 460 pt wide with a fixed 640 pt of content below a taller, toolbar-height title bar; closing it hides it and the Dock icon.
 - Menu bar popover is 360x180 and shares settings and the queue with the main window. The global shortcut opens it and fills in a copied link.
-- Settings window (400 wide): appearance (theme, background glow), global shortcut, and requirements (yt-dlp, ffmpeg, ffprobe) with install.
+- Settings window (400 wide): appearance (theme, background glow), global shortcut, opt-in browser sign-in (off by default, consent screen first), requirements (yt-dlp, ffmpeg, ffprobe, recommended deno) with install and update, update checks, and advanced extra yt-dlp arguments.
 - Status is a single line (Idle, Checking link…, Downloading 42% · speed · time left, completed, errors). Real progress is parsed from yt-dlp output: per video, per playlist and across the whole queue.
 
 ## Capabilities and Constraints

@@ -101,7 +101,7 @@ Built for macOS 26 with Liquid Glass. Works on macOS 14 and later.
 - **Requirements:** shows whether `yt-dlp`, `ffmpeg`, `ffprobe` and `deno` are installed, and their versions. Missing tools have an **Install** button, and installed ones an **Update** button (tools installed another way show "Manual").
   - `deno` is a JavaScript runtime, **recommended for YouTube**. Without it some YouTube videos may fail or offer fewer formats. Downer passes it to `yt-dlp` automatically, but only when your `yt-dlp` is 2025.11.12 or newer, so press **Update** on `yt-dlp` if needed.
   - With Homebrew installed, Downer runs `brew install` for you.
-  - Without Homebrew, `yt-dlp` and `deno` are downloaded from its official release into Downer's own folder. `ffmpeg` needs Homebrew, and Downer will tell you so.
+  - Without Homebrew, `yt-dlp` and `deno` are downloaded from their official releases into Downer's own folder. `ffmpeg` needs Homebrew, and Downer will tell you so.
   - Already installed somewhere else? Use **Browse…** to point Downer at it.
 
 ### Signing in for age-restricted or bot-checked videos
@@ -117,7 +117,7 @@ Some videos need a signed-in session, for example YouTube's age check and bot ch
   - **Safari:** its cookies are protected, so you must grant Downer Full Disk Access yourself in System Settings → Privacy & Security. Downer won't ask for it.
   - **Firefox:** nothing extra.
 - Using your account with a downloader can lead YouTube to rate-limit or flag it. A secondary account is safer.
-- Turn it off any time in the same place. It applies from the next download.
+- Turn it off any time in the same place. It takes effect straight away, including for links already in the queue.
 
 ### Best compatibility (H.264)
 
@@ -133,7 +133,7 @@ Turn on **Best compatibility (H.264)** under the pickers to prefer H.264 video (
 
 - They come **after** Downer's own format options, so they can override them.
 - Quotes and backslashes work as in a shell.
-- Arguments that would break Downer or put you at risk are refused, with the reason shown: ones Downer manages (output names and folders, progress, quiet mode, the ffmpeg location), ones that stop anything downloading (`--simulate`, `--skip-download`, the JSON dumps), ones that run commands (`--exec`), ones that touch cookies (use the Sign-in setting instead, and `--verbose` or `--print-traffic`, which can print them), and `--config-locations`.
+- Arguments that would break Downer or put you at risk are refused, with the reason shown: ones Downer manages (output names and folders, progress, quiet mode, the ffmpeg location), ones that stop anything downloading (`--simulate`, `--skip-download`, the JSON dumps), ones that run commands (`--exec`), ones that touch cookies (use the Sign-in setting instead, and `--verbose` or `--print-traffic`, which can print them), and `--config-locations`. Abbreviated forms (such as `--verb`) and bundled short flags (such as `-qv`) are refused too.
 
 ## Screenshots
 
@@ -239,7 +239,12 @@ This builds a universal Release app, signs it ad hoc, draws the installer window
 | `DownloadJob.swift` | One queued link and the settings it was added with |
 | `PlaylistModel.swift` | Follows a playlist run line by line (current video, progress, failures) |
 | `QueueTray.swift` | The draggable tray with every link and video |
-| `DependencyManager.swift` | Finds and installs `yt-dlp`, `ffmpeg` and `ffprobe` |
+| `YtDlpArguments.swift` | Builds every `yt-dlp` command line, for look-ups and downloads |
+| `ExtraArguments.swift` | Splits and checks your extra `yt-dlp` arguments |
+| `CookieBrowser.swift`, `CookieConsentSheet.swift` | The opt-in browser sign-in and its consent screen |
+| `ErrorHints.swift` | Turns `yt-dlp` errors into a next step |
+| `UpdateChecker.swift` | The daily check for a new Downer release |
+| `DependencyManager.swift` | Finds, installs and updates `yt-dlp`, `ffmpeg`, `ffprobe` and `deno` |
 | `DesignSystem.swift` | Liquid Glass, materials, motion, buttons and window chrome |
 | `MenuBarIcon.swift` | The menu bar icon and its states, drawn in code |
 | `Downer.icon` | The layered app icon |
