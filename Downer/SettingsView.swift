@@ -21,6 +21,7 @@ struct SettingsView: View {
     @State private var consent: ConsentMode?
     @ObservedObject private var deps = DependencyManager.shared
     @ObservedObject private var updates = UpdateChecker.shared
+    @ObservedObject private var downloads = DownloadManager.shared
 
     var body: some View {
         ZStack {
@@ -414,6 +415,8 @@ struct SettingsView: View {
                 } else {
                     Button("Update") { deps.update(tool) }
                         .buttonStyle(PillButtonStyle())
+                        .disabled(downloads.isActive)
+                        .help(downloads.isActive ? "Wait for the downloads to finish." : "")
                 }
                 Button("Browse…") { choosePath(for: binding) }
                     .buttonStyle(PillButtonStyle())

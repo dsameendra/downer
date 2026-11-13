@@ -78,17 +78,20 @@ enum InstallError: LocalizedError {
     case brewFailed(String)
     case download(String)
     case updateFailed(String)
+    case busyDownloading
 
     var errorDescription: String? {
         switch self {
         case .needsHomebrew:
             return "ffmpeg is installed with Homebrew. Install Homebrew first, then try again."
         case .brewFailed(let detail):
-            return "Homebrew could not finish the install. \(detail)"
+            return "Homebrew could not finish. \(detail)"
         case .download(let detail):
             return "The download failed. \(detail)"
         case .updateFailed(let detail):
             return "The update did not finish. \(detail)"
+        case .busyDownloading:
+            return "Wait for the downloads to finish before updating."
         }
     }
 }
@@ -276,8 +279,11 @@ final class DependencyManager: ObservableObject {
     private func runBrew(_ brew: String, _ arguments: [String]) async throws {
         // an upgrade needs brew's own index refresh, or it never sees a new release
         let upgrading = arguments.first == "upgrade"
-        let (status, _) = try await run(brew, arguments, brewEnvironment: !upgrading)
-        if status != 0 { throw InstallError.brewFailed("(exit \(status))") }
+        let (status, output) = try await run(brew, arguments, brewEnvironment: !upgrading)
+        if status != 0 {
+            throw InstallError.brewFailed(
+                Self.lastMessage(in: output).map { "\($0) (exit \(status))" } ?? "(exit \(status))")
+        }
     }
 
     /// Runs a process, streaming its last output line into the log.
@@ -289,11 +295,8 @@ final class DependencyManager: ObservableObject {
             let proc = Process()
             proc.executableURL = URL(fileURLWithPath: path)
             proc.arguments = arguments
-            var env = ProcessInfo.processInfo.environment
-            if brewEnvironment { env["HOMEBREW_NO_AUTO_UPDATE"] = "1" }
-            env["HOMEBREW_NO_ENV_HINTS"] = "1"
-            env["NONINTERACTIVE"] = "1"
-            proc.environment = env
+            proc.environment = Self.processEnvironment(
+                base: ProcessInfo.processInfo.environment, brewEnvironment: brewEnvironment)
 
             let pipe = Pipe()
             proc.standardOutput = pipe
@@ -313,6 +316,12 @@ final class DependencyManager: ObservableObject {
             }
             proc.terminationHandler = { p in
                 pipe.fileHandleForReading.readabilityHandler = nil
+                // anything the handler had not picked up yet
+                if let rest = try? pipe.fileHandleForReading.readToEnd(),
+                    let s = String(data: rest, encoding: .utf8)
+                {
+                    collected.append(s)
+                }
                 cont.resume(returning: (p.terminationStatus, collected.value))
             }
             do { try proc.run() } catch {
@@ -389,8 +398,10 @@ final class DependencyManager: ObservableObject {
     // MARK: Update
     /// Where a tool came from, judged by its (symlink-resolved) path.
     nonisolated static func updateMethod(
-        for tool: Tool, resolvedPath: String, managedDir: String
+        for tool: Tool, resolvedPath: String, managedDir: String, home: String = NSHomeDirectory()
     ) -> UpdateMethod {
+        // the official install script puts deno here; it replaces itself in place
+        if tool == .deno, resolvedPath == home + "/.deno/bin/deno" { return .selfUpdate(args: ["upgrade"]) }
         let managedPrefix = managedDir.hasSuffix("/") ? managedDir : managedDir + "/"
         if resolvedPath.hasPrefix(managedPrefix) {
             switch tool {
@@ -416,11 +427,22 @@ final class DependencyManager: ObservableObject {
         return method
     }
 
+    /// Updating swaps the tool's binary, so it waits until no download is using one.
+    nonisolated static func canUpdate(downloadsActive: Bool, installing: Set<Tool>, tool: Tool) -> Bool {
+        !downloadsActive && !installing.contains(tool.installGroup)
+    }
+
     func update(_ tool: Tool) {
         let group = tool.installGroup
         guard !installing.contains(group), let method = updateMethod(for: tool),
             let path = status[tool]?.path
         else { return }
+        guard Self.canUpdate(downloadsActive: DownloadManager.shared.isActive, installing: installing, tool: tool)
+        else {
+            failure = InstallError.busyDownloading.localizedDescription
+            notice = nil
+            return
+        }
         let before = status[tool]?.version
         installing.insert(group)
         failure = nil
@@ -435,19 +457,17 @@ final class DependencyManager: ObservableObject {
                     try await runBrew(brew, ["upgrade", formula])
                 case .selfUpdate(let args):
                     let (code, output) = try await run(path, args)
-                    if code != 0 {
-                        let line = output.split(whereSeparator: \.isNewline).last.map(String.init)
-                        throw InstallError.updateFailed(line ?? "(exit \(code))")
+                    if let problem = Self.selfUpdateFailure(code: code, output: output) {
+                        throw InstallError.updateFailed(problem)
                     }
                 case .manual:
                     break
                 }
                 let after = await Task.detached { Self.version(of: tool, at: path) }.value
-                if let after, after != before {
-                    notice = "\(group.title) updated to \(after)"
-                } else {
-                    notice = "\(group.title) is already up to date"
+                guard after != nil else {
+                    throw InstallError.updateFailed("\(group.title) did not start afterwards.")
                 }
+                notice = Self.updateNotice(title: group.title, before: before, after: after)
             } catch {
                 failure = error.localizedDescription
             }
@@ -455,6 +475,51 @@ final class DependencyManager: ObservableObject {
             log = ""
             refresh()
         }
+    }
+
+    // MARK: Update output (pure, so it can be tested)
+
+    /// Colour codes and blank lines removed, last line kept.
+    nonisolated static func lastMessage(in output: String) -> String? {
+        let clean = output.replacingOccurrences(
+            of: "\u{1B}\\[[0-9;]*[A-Za-z]", with: "", options: .regularExpression)
+        let line = clean.split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .last { !$0.isEmpty }
+        return line.map { String($0.prefix(120)) }
+    }
+
+    /// Why a `yt-dlp -U` / `deno upgrade` run failed, or nil when it worked.
+    /// yt-dlp can print an ERROR line and still exit 0, so the text is checked too.
+    nonisolated static func selfUpdateFailure(code: Int32, output: String) -> String? {
+        let message = lastMessage(in: output)
+        if code != 0 { return message ?? "(exit \(code))" }
+        let errorLine = output.split(whereSeparator: \.isNewline)
+            .first { $0.hasPrefix("ERROR:") }
+        return errorLine.map { String($0.dropFirst(6)).trimmingCharacters(in: .whitespaces) }
+    }
+
+    nonisolated static func updateNotice(title: String, before: String?, after: String?) -> String {
+        if let after, after != before { return "\(title) updated to \(after)" }
+        return "\(title) is already up to date"
+    }
+
+    /// The environment tools run with. A GUI app starts with a bare PATH and may lack
+    /// HOME-style variables, so brew's own directory is added and colours are turned off.
+    nonisolated static func processEnvironment(
+        base: [String: String], brewEnvironment: Bool
+    ) -> [String: String] {
+        var env = base
+        if brewEnvironment { env["HOMEBREW_NO_AUTO_UPDATE"] = "1" }
+        env["HOMEBREW_NO_ENV_HINTS"] = "1"
+        env["NONINTERACTIVE"] = "1"
+        env["NO_COLOR"] = "1"
+        let wanted = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"]
+        var parts = (env["PATH"] ?? "").split(separator: ":").map(String.init)
+        for dir in wanted where !parts.contains(dir) { parts.append(dir) }
+        env["PATH"] = parts.joined(separator: ":")
+        if env["HOME"] == nil { env["HOME"] = NSHomeDirectory() }
+        return env
     }
 }
 

@@ -72,4 +72,72 @@ struct ToolUpdateTests {
             for: options(js: nil), purpose: .probe(only: nil), useCookies: false, url: "u")
         #expect(!args.contains("--js-runtimes"))
     }
+
+    // MARK: Update runs
+
+    @Test func denoFromTheInstallScriptUpgradesItself() {
+        let m = DependencyManager.updateMethod(
+            for: .deno, resolvedPath: "/Users/x/.deno/bin/deno", managedDir: managed, home: "/Users/x")
+        #expect(m == .selfUpdate(args: ["upgrade"]))
+        let other = DependencyManager.updateMethod(
+            for: .ytDlp, resolvedPath: "/Users/x/.deno/bin/yt-dlp", managedDir: managed, home: "/Users/x")
+        #expect(other == .manual)
+    }
+
+    @Test func updateWaitsForDownloads() {
+        #expect(DependencyManager.canUpdate(downloadsActive: false, installing: [], tool: .ytDlp))
+        #expect(!DependencyManager.canUpdate(downloadsActive: true, installing: [], tool: .ytDlp))
+        #expect(!DependencyManager.canUpdate(downloadsActive: true, installing: [], tool: .deno))
+        #expect(!DependencyManager.canUpdate(downloadsActive: false, installing: [.ffmpeg], tool: .ffprobe))
+        #expect(DependencyManager.canUpdate(downloadsActive: false, installing: [.ffmpeg], tool: .ytDlp))
+    }
+
+    // real output captured from yt-dlp 2025.10.22 -U and deno 2.4.0 upgrade
+    let ytDlpUpdated = """
+        Current version: stable@2025.10.22 from yt-dlp/yt-dlp
+        Latest version: stable@2026.10.26 from yt-dlp/yt-dlp
+        Updating to stable@2026.10.26 from yt-dlp/yt-dlp ...
+        Updated yt-dlp to stable@2026.10.26 from yt-dlp/yt-dlp
+        """
+    let denoUpgraded =
+        "Current Deno version: v2.4.0\n\u{1B}[0m\u{1B}[38;5;245mLooking up stable version\u{1B}[0m\n\n"
+        + "Upgraded successfully to Deno \u{1B}[0m\u{1B}[32mv2.9.8\u{1B}[0m \u{1B}[0m\u{1B}[38;5;245m(stable)\u{1B}[0m\n"
+
+    @Test func successfulRunsAreNotFailures() {
+        #expect(DependencyManager.selfUpdateFailure(code: 0, output: ytDlpUpdated) == nil)
+        #expect(DependencyManager.selfUpdateFailure(code: 0, output: denoUpgraded) == nil)
+        #expect(DependencyManager.selfUpdateFailure(code: 0, output: "") == nil)
+    }
+
+    @Test func failedRunsExplainThemselves() {
+        let offline = "Current version: stable@2025.10.22\nERROR: Unable to obtain version info (offline)\n"
+        #expect(DependencyManager.selfUpdateFailure(code: 1, output: offline) == "ERROR: Unable to obtain version info (offline)")
+        // exit 0 with an ERROR line is still a failure
+        #expect(DependencyManager.selfUpdateFailure(code: 0, output: offline) == "Unable to obtain version info (offline)")
+        #expect(DependencyManager.selfUpdateFailure(code: 2, output: "") == "(exit 2)")
+    }
+
+    @Test func colourCodesAreStripped() {
+        #expect(DependencyManager.lastMessage(in: denoUpgraded) == "Upgraded successfully to Deno v2.9.8 (stable)")
+        #expect(DependencyManager.lastMessage(in: "  \n\n") == nil)
+    }
+
+    @Test func noticeComparesVersionsBeforeAndAfter() {
+        #expect(DependencyManager.updateNotice(title: "yt-dlp", before: "2025.10.22", after: "2026.10.26") == "yt-dlp updated to 2026.10.26")
+        #expect(DependencyManager.updateNotice(title: "deno", before: "2.9.8", after: "2.9.8") == "deno is already up to date")
+        #expect(DependencyManager.updateNotice(title: "ffmpeg", before: nil, after: "9.0") == "ffmpeg updated to 9.0")
+    }
+
+    @Test func brewGetsAUsableEnvironmentFromABareGuiLaunch() {
+        let bare = ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin"]
+        let up = DependencyManager.processEnvironment(base: bare, brewEnvironment: false)
+        #expect(up["HOMEBREW_NO_AUTO_UPDATE"] == nil)  // an upgrade must see new releases
+        #expect(up["NO_COLOR"] == "1")
+        #expect(up["PATH"]!.hasPrefix("/usr/bin:/bin:/usr/sbin:/sbin"))
+        #expect(up["PATH"]!.contains("/opt/homebrew/bin"))
+        #expect(up["HOME"] != nil)
+        let install = DependencyManager.processEnvironment(base: [:], brewEnvironment: true)
+        #expect(install["HOMEBREW_NO_AUTO_UPDATE"] == "1")
+        #expect(install["PATH"]!.contains("/usr/bin"))
+    }
 }
