@@ -110,8 +110,10 @@ struct DownloadJob: Identifiable, Equatable {
 
     /// Network-level failures are worth one more try; "unavailable" or "private" are not.
     static func isTransient(_ reason: String?) -> Bool {
-        guard let reason = reason?.lowercased() else { return false }
-        let permanent = ["unavailable", "private", "copyright", "sign in", "age", "members", "removed", "not available", "geo"]
+        guard let reason = reason?.lowercased()
+            .replacingOccurrences(of: "service unavailable", with: "")  // a 503 is a hiccup, not "unavailable"
+        else { return false }
+        let permanent = ["unavailable", "private", "copyright", "sign in", "age-restricted", "age restricted", "confirm your age", "age verification", "members", "removed", "not available", "geo"]
         if permanent.contains(where: reason.contains) { return false }
         let transient = ["http error 4", "http error 5", "timed out", "connection", "reset by peer", "temporary failure", "unable to download", "incomplete", "stopped before"]
         return transient.contains(where: reason.contains)

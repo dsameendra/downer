@@ -159,3 +159,21 @@ struct CookieBrowserTests {
         #expect(CookieBrowser.current(suite) == nil)
     }
 }
+
+struct AutoRetryTests {
+    @Test func webpageErrorsAreTransient() {
+        #expect(DownloadJob.isTransient("Unable to download webpage: HTTP Error 503"))
+        #expect(DownloadJob.isTransient("Unable to download webpage: HTTP Error 503: Service Unavailable"))
+        #expect(DownloadJob.isTransient("Unable to download webpage: <urlopen error timed out>"))
+        #expect(DownloadJob.isTransient("Unable to download video data: HTTP Error 502: Bad Gateway message"))
+    }
+
+    @Test func permanentErrorsAreNotRetried() {
+        #expect(!DownloadJob.isTransient("Sign in to confirm your age. This video may be inappropriate"))
+        #expect(!DownloadJob.isTransient("This video is age-restricted"))
+        #expect(!DownloadJob.isTransient("Age verification is required"))
+        #expect(!DownloadJob.isTransient("Video unavailable"))
+        #expect(!DownloadJob.isTransient("Private video"))
+        #expect(!DownloadJob.isTransient(nil))
+    }
+}
