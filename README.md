@@ -88,15 +88,18 @@ anywhere, press the shortcut, and the popover opens with the link already filled
   <tr>
     <td align="center" valign="top" width="33%"><img src="docs/screenshots/queue-dark.png" width="270" alt="The queue, open"/><br/><b>The queue, open</b><br/><sub>Every link and every video in a playlist, each with its own progress.</sub></td>
     <td align="center" valign="top" width="33%"><img src="docs/screenshots/queue-light.png" width="270" alt="The queue, in light mode"/><br/><b>The queue, in light mode</b><br/><sub>Pull the tray up to see what is happening to each video.</sub></td>
-    <td align="center" valign="top" width="33%"><img src="docs/screenshots/settings-dark.png" width="270" alt="Settings"/><br/><b>Settings</b><br/><sub>Appearance, shortcut, sign-in, the tools Downer needs, and updates.</sub></td>
+    <td align="center" valign="top" width="33%"><img src="docs/screenshots/settings-dark.png" width="270" alt="Settings: appearance, shortcut and sign-in"/><br/><b>Settings</b><br/><sub>Appearance, the global shortcut and the optional browser sign-in.</sub></td>
+  </tr>
+</table>
+
+<table align="center">
+  <tr>
+    <td align="center" valign="top" width="40%"><img src="docs/screenshots/settings-tools-dark.png" width="270" alt="Settings: tools, updates and extra arguments"/><br/><b>Tools and updates</b><br/><sub>Install or update yt-dlp, ffmpeg and deno, check for Downer updates, and add extra yt-dlp arguments.</sub></td>
+    <td align="center" valign="middle" width="60%"><img src="docs/screenshots/popover-dark.png" width="360" alt="The menu bar popover"/><br/><b>The menu bar popover</b><br/><sub>Copy a link, press your shortcut, and it opens with the link filled in.</sub></td>
   </tr>
 </table>
 
 <div align="center">
-
-<img src="docs/screenshots/popover-dark.png" width="360" alt="The menu bar popover"/><br/><b>The menu bar popover</b><br/><sub>Copy a link, press your shortcut, and it opens with the link filled in.</sub>
-
-<br/>
 
 <img src="docs/screenshots/menubar-icons.png" width="560" alt="Menu bar icon states on a dark and a light menu bar"/><br/><b>Menu bar icon states</b><br/><sub>Idle, downloading (percentage or item of total), finished, and needs attention.</sub>
 
