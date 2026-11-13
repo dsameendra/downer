@@ -146,6 +146,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
     // context menu builder
     private func buildMenu() -> NSMenu {
         let menu = NSMenu()
+        // items with a target/action are otherwise re-enabled automatically, ignoring isEnabled
+        menu.autoenablesItems = false
 
         menu.addItem(
             NSMenuItem(

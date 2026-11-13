@@ -313,6 +313,8 @@ struct SettingsView: View {
     private var updateStatus: some View {
         if !updates.isConfigured {
             Text("Downer \(UpdateChecker.currentVersion). Updates are not set up in this build.")
+        } else if updates.installWaitingForDownloads {
+            Text("Update will install when downloads finish")
         } else if let last = updates.lastChecked {
             Text("Downer \(UpdateChecker.currentVersion). Last checked \(last.formatted(date: .abbreviated, time: .shortened))")
         } else {

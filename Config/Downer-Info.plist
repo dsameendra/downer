@@ -11,7 +11,7 @@
 	<true/>
 	<key>SUScheduledCheckInterval</key>
 	<integer>86400</integer>
-	<key>SUEnableSystemProfiling</key>
+	<key>SUSendProfileInfo</key>
 	<false/>
 	<key>SUAllowsAutomaticUpdates</key>
 	<true/>

@@ -237,7 +237,15 @@ Updates are delivered by [Sparkle](https://sparkle-project.org). Setting it up o
 2. Paste the public key into `DOWNER_SU_PUBLIC_ED_KEY` in `Downer.xcodeproj` (the app target's build settings). `make-dmg.sh` refuses to build while it is still the placeholder.
 3. Back up the private key (`generate_keys -x key-file`) somewhere safe. Without it, installed copies can never be updated.
 
-For every release the script also signs the DMG with that key and writes `dist/appcast.xml`. Upload the DMG, its `.sha256` and `appcast.xml` to the GitHub release `v<version>`; installed copies read `releases/latest/download/appcast.xml`. Raise `CURRENT_PROJECT_VERSION` for every release: Sparkle compares that number, not the version name. Set `SPARKLE_ED_KEY_FILE` to sign with an exported key file instead of the Keychain.
+For every release the script also signs the DMG with that key and writes `dist/appcast.xml`, with the release notes from `docs/release-notes/<version>.md` embedded (write that file first; the build stops without it). Raise `CURRENT_PROJECT_VERSION` for every release: Sparkle compares that number, not the version name, and never downgrades. The script fetches the published appcast and refuses a build number that is not higher than every one in it (`SKIP_BUILD_NUMBER_CHECK=1` turns the check off; if no appcast is published yet it just says so). Set `SPARKLE_ED_KEY_FILE` to sign with an exported key file instead of the Keychain.
+
+Publishing, in this order, so installed copies never see a release that is missing its files:
+
+1. Create the GitHub release `v<version>` as a **draft** (`gh release create v<version> --draft --title "Downer <version>" --notes-file docs/release-notes/<version>.md`).
+2. Upload `dist/Downer-<version>.dmg`, its `.sha256` and `dist/appcast.xml` to the draft.
+3. Publish it. Installed copies read `releases/latest/download/appcast.xml`, and GitHub picks "latest" as the most recent release that is neither a draft nor a pre-release, so it only points at the new release once step 3 is done. Do not mark a release as a pre-release if it should be offered to everyone.
+
+To exercise the pipeline without the real key, run `./scripts/tests/appcast-smoke.sh`. Builds made with `ALLOW_PLACEHOLDER_KEY=1`, or with `EXTRA_XCODEBUILD_SETTINGS="DOWNER_SU_PUBLIC_ED_KEY=<key>"` plus `SPARKLE_ED_KEY_FILE`, are test builds: they write to `dist/test/` with `-UNSIGNED-TEST` in the file name and must never be uploaded.
 
 ### How it is put together
 
