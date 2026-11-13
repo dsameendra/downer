@@ -27,6 +27,7 @@ final class DownloadManager: ObservableObject {
     private var runningID: UUID?
     private var tracker = PlaylistTracker()
     private var pathFile: URL?
+    private var runDirectory: URL?
     private var lastErrorLine: String?
     /// ERROR and WARNING lines of the current run (in memory only, capped), used to pick an error hint.
     private var errorLog = ErrorLog()
@@ -333,8 +334,11 @@ final class DownloadManager: ObservableObject {
     nonisolated private static func probe(
         url: String, ytDlp: String, options: JobOptions, only: [Int]?, useCookies: Bool, control: ProbeControl
     ) -> (value: ProbeResult?, errorText: String) {
+        guard let runDirectory = RunDirectory.make() else { return (nil, "") }
+        defer { RunDirectory.remove(runDirectory) }
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: ytDlp)
+        proc.currentDirectoryURL = runDirectory  // not the app's own folder: see RunDirectory
         proc.arguments = YtDlpArguments.build(
             for: options, purpose: .probe(only: only), useCookies: useCookies, url: url)
         proc.environment = YtDlpEnvironment.make(
@@ -450,13 +454,19 @@ final class DownloadManager: ObservableObject {
             purpose: .download(
                 pathFile: pathFile.path,
                 ffmpegDirectory: (ffmpegPath as NSString).deletingLastPathComponent,
+                outputFolder: job.options.folder.path,
                 only: job.only),
             useCookies: job.needsCookies, url: job.url)
 
+        guard let workDirectory = RunDirectory.make() else {
+            stop("Couldn't prepare a working folder.")
+            return
+        }
+        self.runDirectory = workDirectory
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: ytDlpPath)
         proc.arguments = args
-        proc.currentDirectoryURL = job.options.folder
+        proc.currentDirectoryURL = workDirectory  // never the download folder: see RunDirectory
         proc.environment = YtDlpEnvironment.make(
             base: ProcessInfo.processInfo.environment,
             ffmpegDirectory: (ffmpegPath as NSString).deletingLastPathComponent,
@@ -486,6 +496,8 @@ final class DownloadManager: ObservableObject {
         } catch {
             process = nil
             runningID = nil
+            RunDirectory.remove(runDirectory)
+            runDirectory = nil
             stop("Couldn't start yt‑dlp. \(error.localizedDescription)")
             return
         }
@@ -579,6 +591,8 @@ final class DownloadManager: ObservableObject {
             .split(whereSeparator: \.isNewline).map { URL(fileURLWithPath: String($0)) } ?? []
         if let pathFile { try? FileManager.default.removeItem(at: pathFile) }
         pathFile = nil
+        RunDirectory.remove(runDirectory)
+        runDirectory = nil
 
         guard let i = jobs.firstIndex(where: { $0.id == id }) else {
             pump()
@@ -598,6 +612,7 @@ final class DownloadManager: ObservableObject {
             ? ErrorHint.classifyForDisplay(
                 errorText: errorLog.text, lastError: errorLog.lastError,
                 cookiesBrowser: currentBrowser, usedCookies: usedCookies)
+                .map { $0.resolvingMissingBrowser(cookiesEnabled: UserDefaults.standard.bool(forKey: "cookiesEnabled")) }
             : nil
         let failedItems = jobs[i].playlist?.failed ?? []
         let action = QueueLogic.nextAction(

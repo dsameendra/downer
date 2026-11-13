@@ -120,7 +120,7 @@ Some videos need a signed-in session, for example YouTube's age check and bot ch
 - Downer never saves, copies, uploads or logs your cookies, and never sees your password.
 - Turning it off is immediate: it applies to links already in the queue too.
 - If the chosen browser is no longer installed, the menu shows **Choose a browser** and no cookies are used until you pick another. Downer never swaps in a different browser's cookies.
-- `yt-dlp` config files (such as `~/.config/yt-dlp/config`) cannot turn cookies on behind Downer's back: Downer cancels their cookie options, and stops them from writing an info file that could hold cookies.
+- `yt-dlp` config files (such as `~/.config/yt-dlp/config`) cannot turn cookies on behind Downer's back: Downer cancels their cookie options, and stops them from writing an info file that could hold cookies. A `yt-dlp.conf` that ends up in your download folder is never read: Downer runs `yt-dlp` from its own private temporary folder.
 - macOS may ask for permission, depending on the browser:
   - **Chrome, Brave, Edge, Chromium, Vivaldi, Opera:** macOS asks once to let Downer use the browser's "Safe Storage" item from your Keychain, which is how the cookies are decrypted.
   - **Safari:** its cookies are protected, so Downer needs Full Disk Access, and macOS won't ask for it. With Safari chosen, Settings shows **Full Disk Access: granted** or **not granted**, and **Open Full Disk Access Settings** takes you to the right pane. After allowing it, **quit and reopen Downer**.

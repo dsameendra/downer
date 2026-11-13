@@ -275,9 +275,25 @@ final class DependencyManager: ObservableObject {
             } catch {
                 failure = error.localizedDescription
             }
+            // the queue resumes the moment `installing` empties and reads the saved path, so save it first
+            Self.persistLocatedPaths(for: group)
             installing.remove(group)
             log = ""
             refresh()
+        }
+    }
+
+    /// Saves where the tools of `group` now live, so a download that starts right after an install or update
+    /// finds them (the full refresh below only saves paths after probing every tool).
+    nonisolated static func persistLocatedPaths(
+        for group: Tool,
+        defaults: UserDefaults = .standard,
+        locate: (Tool) -> String? = { DependencyManager.locate($0) }
+    ) {
+        for tool in Tool.allCases where tool.installGroup == group {
+            if let path = locate(tool), path != defaults.string(forKey: tool.defaultsKey) {
+                defaults.set(path, forKey: tool.defaultsKey)
+            }
         }
     }
 
@@ -559,6 +575,7 @@ final class DependencyManager: ObservableObject {
             } catch {
                 failure = error.localizedDescription
             }
+            Self.persistLocatedPaths(for: group)
             installing.remove(group)
             log = ""
             refresh()

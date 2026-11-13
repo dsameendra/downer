@@ -26,7 +26,7 @@ struct YtDlpArgumentsTests {
     let infoJsonOff = ["--no-write-info-json", "--no-embed-info-json"]
 
     func download(only: [Int]? = nil) -> YtDlpArguments.Purpose {
-        .download(pathFile: "/tmp/p.txt", ffmpegDirectory: "/opt/ff", only: only)
+        .download(pathFile: "/tmp/p.txt", ffmpegDirectory: "/opt/ff", outputFolder: "/Users/x/Downloads", only: only)
     }
 
     @Test func probeHasNoFormatArgs() {
@@ -40,8 +40,27 @@ struct YtDlpArgumentsTests {
         let expected = YtDlpArguments.formatArguments(for: o)
             + cookiesOff
             + infoJsonOff
+            + ["-o", "/Users/x/Downloads/%(title)s [%(id)s].%(ext)s"]
             + ["--print-to-file", "after_move:filepath", "/tmp/p.txt", "--newline", "--ffmpeg-location", "/opt/ff", link]
         #expect(args == expected)
+    }
+
+    @Test func outputTemplateEscapesPercentInFolder() {
+        #expect(YtDlpArguments.outputTemplate(folder: "/Users/x/100% Done")
+            == "/Users/x/100%% Done/%(title)s [%(id)s].%(ext)s")
+        #expect(YtDlpArguments.outputTemplate(folder: "/Users/x/%(id)s/")
+            == "/Users/x/%%(id)s/%(title)s [%(id)s].%(ext)s")
+        #expect(YtDlpArguments.outputTemplate(folder: "/").hasPrefix("//") == false)
+    }
+
+    @Test func runDirectoryIsPrivateAndEmpty() throws {
+        let dir = try #require(RunDirectory.make())
+        defer { RunDirectory.remove(dir) }
+        let attrs = try FileManager.default.attributesOfItem(atPath: dir.path)
+        #expect((attrs[.posixPermissions] as? Int) == 0o700)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path).isEmpty)
+        RunDirectory.remove(dir)
+        #expect(!FileManager.default.fileExists(atPath: dir.path))
     }
 
     @Test func extraArgsSitBetweenFormatAndRequired() {
@@ -52,7 +71,8 @@ struct YtDlpArgumentsTests {
         #expect(Array(args[format.count...].prefix(2)) == ["--foo", "bar"])
         #expect(Array(args[(format.count + 2)...].prefix(2)) == cookiesOff)
         #expect(Array(args[(format.count + 4)...].prefix(2)) == infoJsonOff)
-        #expect(args[format.count + 6] == "--print-to-file")
+        #expect(args[format.count + 6] == "-o")  // after the extra args, so nothing can override it
+        #expect(args[format.count + 8] == "--print-to-file")
         let probe = YtDlpArguments.build(for: o, purpose: .probe(only: nil), useCookies: false, url: link)
         #expect(probe == ["--foo", "bar"] + cookiesOff + probeFlags + [link])
     }

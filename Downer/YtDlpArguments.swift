@@ -11,7 +11,7 @@ import Foundation
 enum YtDlpArguments {
     enum Purpose: Equatable {
         case probe(only: [Int]?)
-        case download(pathFile: String, ffmpegDirectory: String, only: [Int]?)
+        case download(pathFile: String, ffmpegDirectory: String, outputFolder: String, only: [Int]?)
     }
 
     /// Order: format args (download only), extra args, cookie flags, Downer's own flags (downloads also
@@ -38,10 +38,13 @@ enum YtDlpArguments {
         case .probe(let only):
             args += ["--flat-playlist", "--no-warnings", "--print", "%(playlist_title|)s\t%(title)s"]
             args += items(only)
-        case .download(let pathFile, let ffmpegDirectory, let only):
+        case .download(let pathFile, let ffmpegDirectory, let outputFolder, let only):
             // A config file's --write-info-json / --embed-info-json would write the `cookies` field of the
             // info dict to disk when Sign-in is on, so cancel them for every download.
             args += ["--no-write-info-json", "--no-embed-info-json"]
+            // yt-dlp runs in a private empty folder (see RunDirectory), so the destination is spelled out.
+            // The file name is yt-dlp's own default, so nothing changes for the person.
+            args += ["-o", outputTemplate(folder: outputFolder)]
             args += ["--print-to-file", "after_move:filepath", pathFile]
             args += ["--newline", "--ffmpeg-location", ffmpegDirectory]
             args += items(only)
@@ -49,6 +52,15 @@ enum YtDlpArguments {
         args.append(url)
         return args
     }
+
+    /// yt-dlp's default name (`%(title)s [%(id)s].%(ext)s`) inside the destination folder. A `%` in the
+    /// folder's path would start a template field, so it is doubled.
+    nonisolated static func outputTemplate(folder: String) -> String {
+        let base = folder.hasSuffix("/") ? String(folder.dropLast()) : folder
+        return base.replacingOccurrences(of: "%", with: "%%") + "/" + defaultFileTemplate
+    }
+
+    nonisolated static let defaultFileTemplate = "%(title)s [%(id)s].%(ext)s"
 
     nonisolated private static func items(_ only: [Int]?) -> [String] {
         only.map { ["--playlist-items", $0.map(String.init).joined(separator: ",")] } ?? []
@@ -89,5 +101,24 @@ enum YtDlpArguments {
             if wantsH264 { args += ["-S", "vcodec:h264,lang,quality,res,fps,hdr:12,acodec:aac"] }
             return args
         }
+    }
+}
+
+/// yt-dlp reads `yt-dlp.conf` from its working directory as its "Home" config, which would let a stray
+/// file in the download folder run commands (`--exec`) behind the extra-arguments allowlist. So every
+/// yt-dlp process runs in a private, empty folder that only Downer can write to, and is removed afterwards.
+enum RunDirectory {
+    nonisolated static func make() -> URL? {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("Downer-run-\(UUID().uuidString)", isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(
+                at: url, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+            return url
+        } catch { return nil }
+    }
+
+    nonisolated static func remove(_ url: URL?) {
+        if let url { try? FileManager.default.removeItem(at: url) }
     }
 }

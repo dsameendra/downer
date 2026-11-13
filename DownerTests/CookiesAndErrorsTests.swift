@@ -106,9 +106,26 @@ struct ErrorHintTests {
         let all: [ErrorHint] = [
             .signIn(browser: nil, usedCookies: false), .signIn(browser: .brave, usedCookies: true),
             .safariAccess, .keychain(browser: .brave), .browserNotFound(browser: .chromium),
-            .outdated, .rateLimited, .unavailable,
+            .outdated, .rateLimited, .unavailable, .signInBrowserMissing,
         ]
         for hint in all { #expect(hint.message.count <= 80, "\(hint.message)") }
+    }
+
+    @Test func signInWithUninstalledBrowserSaysSo() {
+        let plain = ErrorHint.signIn(browser: nil, usedCookies: false)
+        // Sign-in off: the old advice stands
+        #expect(plain.resolvingMissingBrowser(cookiesEnabled: false) == plain)
+        #expect(plain.message.contains("Turn on Sign-in"))
+        // Sign-in on but no installed browser: don't tell them to turn it on
+        let missing = plain.resolvingMissingBrowser(cookiesEnabled: true)
+        #expect(missing == .signInBrowserMissing)
+        #expect(missing.message == "Your sign-in browser isn't installed. Choose another in Settings.")
+        #expect(missing.message.count <= 70)
+        #expect(missing.needsSignInSetting)  // still offers Open Settings
+        // a browser was used: unchanged
+        let used = ErrorHint.signIn(browser: .brave, usedCookies: true)
+        #expect(used.resolvingMissingBrowser(cookiesEnabled: true) == used)
+        #expect(ErrorHint.rateLimited.resolvingMissingBrowser(cookiesEnabled: true) == .rateLimited)
     }
 
     @Test func missingBrowserFallsBackToGenericName() {

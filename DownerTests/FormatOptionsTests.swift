@@ -220,7 +220,7 @@ struct FormatOptionsTests {
     @Test func extraArgumentsStayBeforeDownersFlags() {
         let o = options(.both, h264: true, extra: ["--limit-rate", "2M"])
         let args = YtDlpArguments.build(
-            for: o, purpose: .download(pathFile: "/tmp/p", ffmpegDirectory: "/tmp/f", only: nil),
+            for: o, purpose: .download(pathFile: "/tmp/p", ffmpegDirectory: "/tmp/f", outputFolder: "/tmp/o", only: nil),
             useCookies: false, url: "https://x")
         let extra = args.firstIndex(of: "--limit-rate")!
         #expect(args.firstIndex(of: "-S")! < extra)

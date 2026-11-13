@@ -11,6 +11,8 @@ import Foundation
 enum ErrorHint: Equatable {
     /// `youtube` is true only when the error text is tagged `[youtube…]`; other sites get neutral wording.
     case signIn(browser: CookieBrowser?, usedCookies: Bool, youtube: Bool = true)
+    /// Sign-in is on, but the browser chosen for it is not installed (so no cookies could be used).
+    case signInBrowserMissing
     case safariAccess
     case keychain(browser: CookieBrowser?)
     case browserNotFound(browser: CookieBrowser?)
@@ -72,6 +74,12 @@ enum ErrorHint: Equatable {
         return whole
     }
 
+    /// A sign-in hint with no browser means Sign-in was off, unless it is on and its browser is gone.
+    nonisolated func resolvingMissingBrowser(cookiesEnabled: Bool) -> ErrorHint {
+        if cookiesEnabled, case .signIn(nil, _, _) = self { return .signInBrowserMissing }
+        return self
+    }
+
     var isSignIn: Bool {
         if case .signIn = self { return true }
         return false
@@ -89,6 +97,8 @@ enum ErrorHint: Equatable {
                     : "This site wants you signed in. Turn on Sign-in in Settings."
             }
             return "Still blocked. Sign in to \(site) in \(Self.name(browser)), then retry."
+        case .signInBrowserMissing:
+            return "Your sign-in browser isn't installed. Choose another in Settings."
         case .safariAccess:
             return "Downer needs Full Disk Access to use Safari's sign-in."
         case .keychain(let browser):
@@ -110,7 +120,7 @@ enum ErrorHint: Equatable {
     /// True when the fix is the Sign-in switch, so the UI can offer to open Settings.
     var needsSignInSetting: Bool {
         if case .signIn(nil, _, _) = self { return true }
-        return false
+        return self == .signInBrowserMissing
     }
 
     nonisolated private static func name(_ browser: CookieBrowser?) -> String {

@@ -23,6 +23,28 @@ struct ToolUpdateTests {
         #expect(method(.deno, "/opt/homebrew/Cellar/deno/2.1.4/bin/deno") == .brew(formula: "deno"))
     }
 
+    @Test func installSavesLocatedPathsBeforeQueueResumes() throws {
+        let suite = "downer-test-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set("/opt/homebrew/bin/yt-dlp", forKey: Tool.ytDlp.defaultsKey)  // stale
+        defaults.set("/old/deno", forKey: Tool.deno.defaultsKey)
+        let located: [Tool: String] = [
+            .ytDlp: "/Users/x/Library/Application Support/Downer/bin/yt-dlp",
+            .deno: "/new/deno", .ffmpeg: "/b/ffmpeg", .ffprobe: "/b/ffprobe",
+        ]
+        DependencyManager.persistLocatedPaths(for: .ytDlp, defaults: defaults) { located[$0] }
+        #expect(defaults.string(forKey: Tool.ytDlp.defaultsKey) == located[.ytDlp])
+        #expect(defaults.string(forKey: Tool.deno.defaultsKey) == "/old/deno")  // other groups untouched
+        // ffprobe installs with ffmpeg
+        DependencyManager.persistLocatedPaths(for: .ffmpeg, defaults: defaults) { located[$0] }
+        #expect(defaults.string(forKey: Tool.ffmpeg.defaultsKey) == "/b/ffmpeg")
+        #expect(defaults.string(forKey: Tool.ffprobe.defaultsKey) == "/b/ffprobe")
+        // nothing found: keep what was there
+        DependencyManager.persistLocatedPaths(for: .deno, defaults: defaults) { _ in nil }
+        #expect(defaults.string(forKey: Tool.deno.defaultsKey) == "/old/deno")
+    }
+
     @Test func ffmpegAndFfprobeShareAFormula() {
         #expect(method(.ffmpeg, "/opt/homebrew/Cellar/ffmpeg/7.1/bin/ffmpeg") == .brew(formula: "ffmpeg"))
         #expect(method(.ffprobe, "/opt/homebrew/Cellar/ffmpeg/7.1/bin/ffprobe") == .brew(formula: "ffmpeg"))
@@ -75,7 +97,7 @@ struct ToolUpdateTests {
         let o = options(js: "/opt/homebrew/bin/deno")
         let probe = YtDlpArguments.build(for: o, purpose: .probe(only: nil), useCookies: false, url: "u")
         let dl = YtDlpArguments.build(
-            for: o, purpose: .download(pathFile: "/p", ffmpegDirectory: "/f", only: nil),
+            for: o, purpose: .download(pathFile: "/p", ffmpegDirectory: "/f", outputFolder: "/o", only: nil),
             useCookies: false, url: "u")
         for args in [probe, dl] {
             let i = args.firstIndex(of: "--js-runtimes")
