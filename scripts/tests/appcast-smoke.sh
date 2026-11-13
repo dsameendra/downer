@@ -51,7 +51,12 @@ grep -q '<description><!\[CDATA\[' "$APPCAST" || fail "no embedded release notes
 grep -q 'releaseNotesLink' "$APPCAST" && fail "unexpected releaseNotesLink"
 
 echo "==> Verifying the DMG signature with sign_update"
-SIGN_UPDATE="$(ls -d ~/Library/Developer/Xcode/DerivedData/Downer-*/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update | head -n 1)"
+# Sparkle's tools for the version the project pins, fetched into the temp folder (works on a fresh CI
+# runner too, and never picks up an older Sparkle from some other DerivedData folder)
+xcodebuild -resolvePackageDependencies -project Downer.xcodeproj -scheme Downer \
+  -derivedDataPath "$TMP/packages" >/dev/null
+SIGN_UPDATE="$TMP/packages/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update"
+[[ -x "$SIGN_UPDATE" ]] || fail "sign_update not found at $SIGN_UPDATE"
 SIGNATURE="$(sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p' "$APPCAST")"
 "$SIGN_UPDATE" --verify "$DMG" "$SIGNATURE" -f "$KEYFILE" \
   || fail "sign_update --verify rejected the signature"

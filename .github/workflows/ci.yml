@@ -1,0 +1,68 @@
+# Checks every pull request to main (and every push to main). Both jobs are required by the
+# "main – integrity" ruleset, so their names must stay "Build and test" and "Release pipeline".
+# Nothing here uses secrets: the app is signed ad hoc and the release check uses a throwaway key.
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Build and test
+    runs-on: macos-26
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Show the toolchain
+        run: xcodebuild -version && swift --version
+
+      - name: Unit tests
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project Downer.xcodeproj -scheme Downer \
+            -destination 'platform=macOS' \
+            -only-testing:DownerTests \
+            -derivedDataPath "$RUNNER_TEMP/dd" \
+            -skipPackagePluginValidation -skipMacroValidation \
+            CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= \
+            > "$RUNNER_TEMP/test.log" 2>&1 || true
+          grep -E "^Test case|\*\* TEST" "$RUNNER_TEMP/test.log" || true
+          if ! grep -q "\*\* TEST SUCCEEDED \*\*" "$RUNNER_TEMP/test.log"; then
+            echo "::group::Errors and failures"
+            grep -E "error:|failed|Expectation failed" "$RUNNER_TEMP/test.log" | head -100 || true
+            echo "::endgroup::"
+            tail -n 60 "$RUNNER_TEMP/test.log"
+            exit 1
+          fi
+
+      - name: Gesture model tests
+        run: ./scripts/test-gestures.sh
+
+  release-pipeline:
+    name: Release pipeline
+    runs-on: macos-26
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Builds a universal Release DMG and appcast with a throwaway EdDSA key and checks the
+      # signature, the appcast and that no real release file is touched.
+      - name: DMG and appcast smoke test
+        run: zsh scripts/tests/appcast-smoke.sh
