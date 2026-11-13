@@ -443,7 +443,6 @@ final class DependencyManager: ObservableObject {
             notice = nil
             return
         }
-        let before = status[tool]?.version
         installing.insert(group)
         failure = nil
         notice = nil
@@ -451,6 +450,8 @@ final class DependencyManager: ObservableObject {
 
         Task {
             do {
+                // read now: the cached version can be stale if an earlier refresh is still running
+                let before = await Task.detached { Self.version(of: tool, at: path) }.value
                 switch method {
                 case .brew(let formula):
                     guard let brew = brewPath else { throw InstallError.needsHomebrew }
