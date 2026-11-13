@@ -202,16 +202,15 @@ macOS may block the app, saying:
 
 > "Downer.app can't be opened."
 
-This happens because the app is not signed with a paid Apple Developer account. You can allow it with Terminal:
+This happens because the app is signed with a self-made certificate rather than a paid Apple Developer ID, so Apple has not notarized it. Remove the quarantine flag once with Terminal:
 
-1. Sign the app locally with an ad-hoc signature:
-   ```bash
-   codesign --force --deep --sign - /Applications/Downer.app
-   ```
-2. Remove the quarantine flag so macOS treats it as safe:
-   ```bash
-   xattr -dr com.apple.quarantine /Applications/Downer.app
-   ```
+```bash
+xattr -dr com.apple.quarantine /Applications/Downer.app
+```
+
+Do not re-sign the app (for example with `codesign --sign -`): that replaces its signature, and macOS would forget the permissions you granted (Full Disk Access, Files & Folders, Keychain).
+
+Without Terminal: open the app once, then go to **System Settings → Privacy & Security**, scroll to the message about Downer and press **Open Anyway** (macOS 15 and later no longer offer "Open" on the right-click menu for this).
 
 ### 3. Folder access
 
@@ -268,7 +267,18 @@ The first time Downer saves into a protected folder such as Downloads, macOS ask
 ./scripts/make-dmg.sh
 ```
 
-This builds a universal Release app, signs it ad hoc, draws the installer window and writes `dist/Downer-<version>.dmg` with a checksum next to it. It needs Xcode and Python 3; the DMG tool is installed into `dist/.venv` the first time.
+This builds a universal Release app, signs it with the "Downer Code Signing" certificate, draws the installer window and writes `dist/Downer-<version>.dmg` with a checksum next to it. It needs Xcode and Python 3; the DMG tool is installed into `dist/.venv` the first time.
+
+#### One-time: the code-signing certificate
+
+macOS remembers privacy grants (Full Disk Access, Files & Folders, the Keychain "Always Allow" for Chrome Safe Storage) by the app's *designated requirement*. An ad-hoc signature makes that requirement the hash of each build, so every update would reset the grants. A self-signed certificate makes it "this bundle id and this certificate", which stays the same for every release signed with it. Sparkle's EdDSA key is separate and still signs the DMG.
+
+1. Run `./scripts/signing/create-identity.sh`. It asks for a backup password, creates a 10-year self-signed Code Signing certificate named "Downer Code Signing", writes the backup `~/Downer-Code-Signing-backup.p12` and imports the identity into your login Keychain (allowing `codesign` to use it). No trust settings are changed and nothing needs to be "trusted": `security find-identity -p codesigning` lists it as `CSSMERR_TP_NOT_TRUSTED`, which does not stop `codesign` or the app from working.
+   - By hand instead: Keychain Access → Certificate Assistant → Create a Certificate…, name `Downer Code Signing`, Identity Type **Self Signed Root**, Certificate Type **Code Signing**, then Create.
+2. Back up the identity and keep the file safe (password manager or encrypted disk, never in git). In Keychain Access, select the "Downer Code Signing" certificate under My Certificates, File → Export Items…, format `.p12`, with a password. To restore on another Mac, double-click the `.p12`.
+3. `make-dmg.sh` stops with a pointer back here if the identity is missing. It prints the app's designated requirement and refuses a release whose requirement is cdhash based. Use another name with `DOWNER_SIGN_IDENTITY`. The first build may show "codesign wants to use the key": choose Always Allow.
+
+If the certificate is lost, releases can still be signed with a new one and Sparkle still installs them (the EdDSA key vouches for the update), but the designated requirement changes once, so every user's privacy grants reset one time. Hardened runtime is not enabled: it needs library validation, which requires a Team ID that a self-signed certificate does not have.
 
 Updates are delivered by [Sparkle](https://sparkle-project.org). Setting it up once:
 
@@ -284,7 +294,7 @@ Publishing, in this order, so installed copies never see a release that is missi
 2. Upload `dist/Downer-<version>.dmg`, its `.sha256` and `dist/appcast.xml` to the draft.
 3. Publish it. Installed copies read `releases/latest/download/appcast.xml`, and GitHub picks "latest" as the most recent release that is neither a draft nor a pre-release, so it only points at the new release once step 3 is done. Do not mark a release as a pre-release if it should be offered to everyone.
 
-To exercise the pipeline without the real key, run `./scripts/tests/appcast-smoke.sh`. Builds made with `ALLOW_PLACEHOLDER_KEY=1`, or with `EXTRA_XCODEBUILD_SETTINGS="DOWNER_SU_PUBLIC_ED_KEY=<key>"` plus `SPARKLE_ED_KEY_FILE`, are test builds: they write to `dist/test/` with `-UNSIGNED-TEST` in the file name and must never be uploaded.
+To exercise the pipeline without the real key, run `./scripts/tests/appcast-smoke.sh`. Builds made with `ALLOW_PLACEHOLDER_KEY=1`, or with `EXTRA_XCODEBUILD_SETTINGS="DOWNER_SU_PUBLIC_ED_KEY=<key>"` plus `SPARKLE_ED_KEY_FILE`, are test builds (they always need `SPARKLE_ED_KEY_FILE`, may sign ad hoc with `DOWNER_SIGN_IDENTITY=-`, and the smoke test does): they write to `dist/test/` with `-UNSIGNED-TEST` in the file name and must never be uploaded.
 
 ### How it is put together
 

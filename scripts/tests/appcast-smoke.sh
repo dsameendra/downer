@@ -5,6 +5,7 @@
 #   - the appcast is well-formed XML and carries the version, build number, notes and signature,
 #   - sign_update --verify accepts the DMG signature in the appcast,
 #   - nothing was written to dist/Downer-*.dmg or dist/appcast.xml by this run.
+# Signs ad hoc (DOWNER_SIGN_IDENTITY=-, allowed for test builds only) so no certificate or login Keychain item is used.
 # Takes a few minutes (a full universal Release build). Cleans up dist/test and the temp key on exit.
 set -euo pipefail
 setopt null_glob
@@ -32,6 +33,7 @@ before="$(ls -l dist/Downer-*.dmg dist/appcast.xml 2>/dev/null || true)"
 
 echo "==> Running make-dmg.sh as a test build"
 rm -rf dist/test
+DOWNER_SIGN_IDENTITY=- \
 SPARKLE_ED_KEY_FILE="$KEYFILE" \
 EXTRA_XCODEBUILD_SETTINGS="DOWNER_SU_PUBLIC_ED_KEY=$PUBLIC_KEY" \
   ./scripts/make-dmg.sh

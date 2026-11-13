@@ -1,12 +1,20 @@
 #!/bin/zsh
 # Builds dist/Downer-<version>.dmg from the current checkout:
-#   universal Release build -> ad-hoc signature -> designed installer window
+#   universal Release build -> signature with the stable "Downer Code Signing" identity -> designed installer window
 #   -> Sparkle EdDSA signature -> dist/appcast.xml.
 # Needs Xcode and python3. dmgbuild is installed into dist/.venv on first run.
 #
 # Signing key: sign_update reads the private EdDSA key from the login Keychain (created once with
 # Sparkle's generate_keys). Set SPARKLE_ED_KEY_FILE=/path/to/key to use an exported key file instead.
 # The build is refused while SUPublicEDKey is still the placeholder.
+#
+# Code signing: the app and Sparkle's helpers are signed with the self-signed certificate named by
+# DOWNER_SIGN_IDENTITY (default "Downer Code Signing"; a 40-character certificate hash also works). Create it once with
+# scripts/signing/create-identity.sh (see the README, "Making a release build"). The certificate's hash is part of the app's
+# designated requirement, so macOS privacy grants (Full Disk Access, Files & Folders, Keychain "Always Allow") survive
+# updates only while every release is signed with the SAME certificate. An ad-hoc signature changes with every build.
+# DOWNER_SIGN_KEYCHAIN=/path/to/file.keychain-db makes codesign look in that keychain (used by tests with a temporary one).
+# DOWNER_SIGN_IDENTITY=- signs ad hoc; that is only accepted for test builds (see below).
 #
 # Test builds (never publish these): ALLOW_PLACEHOLDER_KEY=1, or overriding the public key with
 #   EXTRA_XCODEBUILD_SETTINGS="DOWNER_SU_PUBLIC_ED_KEY=<base64>" SPARKLE_ED_KEY_FILE=<its private key file>
@@ -27,8 +35,38 @@ if [[ "${ALLOW_PLACEHOLDER_KEY:-}" == "1" || "${EXTRA_XCODEBUILD_SETTINGS:-}" ==
   TEST_BUILD=1
   OUT="$DIST/test"
 fi
+if (( TEST_BUILD )) && [[ -z "${SPARKLE_ED_KEY_FILE:-}" ]]; then
+  # without a key file sign_update would use the real private key from the login Keychain on a test build
+  echo "error: test builds need SPARKLE_ED_KEY_FILE (a throwaway key file); they never use the Keychain key." >&2
+  exit 1
+fi
 # build outside the checkout: folders like ~/Documents get Finder metadata that codesign rejects
 BUILD="$(mktemp -d)/build"
+IDENTITY="${DOWNER_SIGN_IDENTITY:-Downer Code Signing}"
+SIGN_KEYCHAIN="${DOWNER_SIGN_KEYCHAIN:-}"
+KC_ARGS=()
+[[ -n "$SIGN_KEYCHAIN" ]] && KC_ARGS=(--keychain "$SIGN_KEYCHAIN")
+
+echo "==> Checking the signing identity"
+if [[ "$IDENTITY" == "-" ]]; then
+  if (( TEST_BUILD )); then
+    echo "    ad-hoc signature (test build only)"
+  else
+    echo "error: DOWNER_SIGN_IDENTITY=- (ad hoc) is only allowed for test builds: an ad-hoc app loses its privacy grants on every update." >&2
+    exit 1
+  fi
+else
+  # No -v on purpose: a self-signed certificate that is not marked trusted is listed under "Matching identities"
+  # (CSSMERR_TP_NOT_TRUSTED) and codesign signs with it fine. Trust settings are not needed for signing.
+  FOUND=$(security find-identity -p codesigning ${SIGN_KEYCHAIN:+"$SIGN_KEYCHAIN"} || true)
+  if ! print -r -- "$FOUND" | grep -F -q -e "\"$IDENTITY\"" -e " $IDENTITY \""; then
+    echo "error: no code-signing identity named \"$IDENTITY\" was found in your keychains." >&2
+    echo "Create it once with ./scripts/signing/create-identity.sh (README, \"Making a release build\")," >&2
+    echo "or import your backed-up .p12. To use another identity set DOWNER_SIGN_IDENTITY." >&2
+    exit 1
+  fi
+  echo "    using \"$IDENTITY\""
+fi
 mkdir -p "$DIST" "$OUT"
 
 echo "==> Building Downer (Release, universal)"
@@ -105,9 +143,12 @@ else
   exit 1
 fi
 
-echo "==> Signing (ad-hoc, nested code first)"
+echo "==> Signing with \"$IDENTITY\" (nested code first)"
 # Sparkle's documented order (sparkle-project.org/documentation/sandboxing): innermost helpers, then the
 # framework, then the app. --deep is avoided so each piece is signed exactly once.
+# Hardened runtime (--options runtime) is deliberately NOT enabled: it turns on library validation, which only loads
+# frameworks signed by Apple or with the SAME Team ID as the app. A self-signed certificate has no Team ID, so the app
+# could not load its own Sparkle.framework. (Notarization would need hardened runtime and a paid Developer ID.)
 xattr -cr "$APP"
 SPARKLE="$APP/Contents/Frameworks/Sparkle.framework"
 for nested in \
@@ -118,10 +159,23 @@ for nested in \
   "$SPARKLE"; do
   # a missing piece means Sparkle changed its layout: stop instead of shipping an unsigned helper
   [[ -e "$nested" ]] || { echo "error: expected Sparkle component is missing: $nested" >&2; exit 1; }
-  codesign --force --sign - "$nested"
+  codesign --force --timestamp=none --sign "$IDENTITY" "${KC_ARGS[@]}" "$nested"
 done
-codesign --force --sign - "$APP"
+codesign --force --timestamp=none --sign "$IDENTITY" "${KC_ARGS[@]}" "$APP"
 codesign --verify --deep --strict "$APP"
+
+echo "==> Designated requirement (what macOS privacy grants are keyed on)"
+DR=$(codesign -d -r- "$APP" 2>&1 | sed -n 's/^\(# \)\{0,1\}designated => //p')
+echo "    $DR"
+[[ -n "$DR" ]] || { echo "error: could not read the designated requirement." >&2; exit 1; }
+if [[ "$DR" == *cdhash* ]]; then
+  if (( TEST_BUILD )); then
+    echo "    notice: cdhash-based requirement (ad hoc); fine for a test build only"
+  else
+    echo "error: the designated requirement is cdhash-based, so privacy grants would reset on every update." >&2
+    exit 1
+  fi
+fi
 
 echo "==> Drawing the installer background"
 swift scripts/dmg/make_background.swift "$DIST"
