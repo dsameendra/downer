@@ -56,6 +56,7 @@ struct VerifiedInstallTests {
         try Data("old".utf8).write(to: first)
         try DependencyManager.installAtomically(first, to: dest)  // creates the folder, no old file
         #expect(try String(contentsOf: dest, encoding: .utf8) == "old")
+        try fm.setAttributes([.posixPermissions: 0o644], ofItemAtPath: dest.path)  // an old file that is not executable
 
         let second = dir.appendingPathComponent("two")
         try Data("new".utf8).write(to: second)

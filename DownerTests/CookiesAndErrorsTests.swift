@@ -150,10 +150,10 @@ struct CookieBrowserTests {
     @Test func offByDefaultInJobOptions() {
         let suite = UserDefaults(suiteName: "downer-cookie-test-\(UUID().uuidString)")!
         #expect(JobOptions.current(suite).cookiesBrowser == nil)
-        suite.set("chrome", forKey: "cookiesBrowser")
+        suite.set("safari", forKey: "cookiesBrowser")  // always installed on macOS
         #expect(JobOptions.current(suite).cookiesBrowser == nil)  // browser alone does not enable it
         suite.set(true, forKey: "cookiesEnabled")
-        #expect(JobOptions.current(suite).cookiesBrowser == .chrome)
+        #expect(JobOptions.current(suite).cookiesBrowser == CookieBrowser.current(suite))
     }
 
     @Test func currentBrowserFollowsTheLiveSetting() {

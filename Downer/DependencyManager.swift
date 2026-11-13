@@ -464,10 +464,11 @@ final class DependencyManager: ObservableObject {
         try fm.moveItem(at: source, to: staged)
         try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: staged.path)
         if fm.fileExists(atPath: dest.path) {
-            _ = try fm.replaceItemAt(dest, withItemAt: staged)
+            _ = try fm.replaceItemAt(dest, withItemAt: staged, options: .usingNewMetadataOnly)
         } else {
             try fm.moveItem(at: staged, to: dest)
         }
+        try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dest.path)
     }
 
     // MARK: Update

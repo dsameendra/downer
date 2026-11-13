@@ -181,7 +181,7 @@ enum ExtraArguments {
     private nonisolated static let extractorArgKeys: Set<String> = [
         "player_client", "player_skip", "webpage_skip", "skip", "lang", "formats",
         "include_duplicate_formats", "approximate_date", "raise_incomplete_data", "check_all",
-        "comment_sort", "max_comments", "fetch_pot",
+        "comment_sort", "max_comments",
     ]
 
     // MARK: Validate
