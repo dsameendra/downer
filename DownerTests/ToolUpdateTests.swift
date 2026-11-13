@@ -17,14 +17,32 @@ struct ToolUpdateTests {
     }
 
     @Test func homebrewPathsUpgradeThroughBrew() {
-        #expect(method(.ytDlp, "/opt/homebrew/bin/yt-dlp") == .brew(formula: "yt-dlp"))
+        // judged after symlinks are resolved: bin/ and opt/ entries lead into the Cellar
+        #expect(method(.ytDlp, "/opt/homebrew/Cellar/yt-dlp/2026.8.19_1/libexec/bin/yt-dlp") == .brew(formula: "yt-dlp"))
         #expect(method(.ytDlp, "/usr/local/Cellar/yt-dlp/2025.1.1/bin/yt-dlp") == .brew(formula: "yt-dlp"))
         #expect(method(.deno, "/opt/homebrew/Cellar/deno/2.1.4/bin/deno") == .brew(formula: "deno"))
     }
 
     @Test func ffmpegAndFfprobeShareAFormula() {
-        #expect(method(.ffmpeg, "/opt/homebrew/bin/ffmpeg") == .brew(formula: "ffmpeg"))
-        #expect(method(.ffprobe, "/opt/homebrew/bin/ffprobe") == .brew(formula: "ffmpeg"))
+        #expect(method(.ffmpeg, "/opt/homebrew/Cellar/ffmpeg/7.1/bin/ffmpeg") == .brew(formula: "ffmpeg"))
+        #expect(method(.ffprobe, "/opt/homebrew/Cellar/ffmpeg/7.1/bin/ffprobe") == .brew(formula: "ffmpeg"))
+    }
+
+    @Test func nonBrewThingsUnderHomebrewAreManual() {
+        // an unresolved path, or a pip / npm / hand-copied binary, is not brew's to upgrade
+        #expect(method(.ytDlp, "/opt/homebrew/bin/yt-dlp") == .manual)
+        #expect(method(.ytDlp, "/opt/homebrew/lib/python3.14/site-packages/bin/yt-dlp") == .manual)
+        #expect(method(.deno, "/opt/homebrew/lib/node_modules/deno/bin/deno") == .manual)
+        #expect(method(.ytDlp, "/opt/homebrew/Cellar") == .manual)
+        #expect(method(.ytDlp, "/opt/homebrew/Cellar/yt-dlp") == .manual)
+        #expect(method(.ytDlp, "/opt/homebrew/Cellar/../bin/yt-dlp") == .manual)
+        #expect(method(.ytDlp, "/opt/homebrew/Cellar/-evil/1/bin/yt-dlp") == .manual)
+    }
+
+    @Test func brewFormulaComesFromTheCellarFolder() {
+        #expect(DependencyManager.brewFormula(inResolvedPath: "/opt/homebrew/Cellar/ffmpeg@7/7.1/bin/ffmpeg") == "ffmpeg@7")
+        #expect(DependencyManager.brewFormula(inResolvedPath: "/home/linuxbrew/.linuxbrew/Cellar/deno/2/bin/deno") == "deno")
+        #expect(DependencyManager.brewFormula(inResolvedPath: "/Users/x/Cellar/deno/2/bin/deno") == nil)
     }
 
     @Test func managedBinariesUpdateThemselves() {

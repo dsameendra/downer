@@ -8,6 +8,7 @@
 //
 
 import AppKit
+import CryptoKit
 import Foundation
 
 enum Tool: String, CaseIterable, Identifiable {
@@ -79,6 +80,7 @@ enum InstallError: LocalizedError {
     case download(String)
     case updateFailed(String)
     case busyDownloading
+    case checksum
 
     var errorDescription: String? {
         switch self {
@@ -92,6 +94,8 @@ enum InstallError: LocalizedError {
             return "The update did not finish. \(detail)"
         case .busyDownloading:
             return "Wait for the downloads to finish before updating."
+        case .checksum:
+            return "The download didn't match its published checksum, so it was not installed."
         }
     }
 }
@@ -101,6 +105,7 @@ final class DependencyManager: ObservableObject {
     static let shared = DependencyManager()
 
     @Published private(set) var status: [Tool: ToolStatus] = [:]
+    /// Tools being installed or updated right now. DownloadManager waits while this is not empty.
     @Published private(set) var installing: Set<Tool> = []
     @Published private(set) var log = ""
     @Published private(set) var failure: String?
@@ -143,12 +148,21 @@ final class DependencyManager: ObservableObject {
         }
     }
 
+    /// True while any tool is being installed or updated (its binary may be swapped).
+    var isBusy: Bool { !installing.isEmpty }
+
     func isInstalling(_ tool: Tool) -> Bool {
         installing.contains(tool.installGroup)
     }
 
     // MARK: Detection
+    /// Each refresh takes a number; only the newest one may publish, so a slow older run
+    /// can never overwrite a newer result (or the paths saved for the download code).
+    private var refreshGeneration = 0
+
     func refresh() {
+        refreshGeneration += 1
+        let generation = refreshGeneration
         Task {
             var result: [Tool: ToolStatus] = [:]
             for tool in Tool.allCases {
@@ -156,12 +170,15 @@ final class DependencyManager: ObservableObject {
                 var version: String?
                 if let path {
                     version = await Task.detached { Self.version(of: tool, at: path) }.value
-                    // keep the download code pointed at a working binary
-                    if path != Self.configuredPath(tool) {
-                        UserDefaults.standard.set(path, forKey: tool.defaultsKey)
-                    }
                 }
                 result[tool] = ToolStatus(path: path, version: version)
+            }
+            guard generation == refreshGeneration else { return }
+            for tool in Tool.allCases {
+                // keep the download code pointed at a working binary
+                if let path = result[tool]?.path, path != Self.configuredPath(tool) {
+                    UserDefaults.standard.set(path, forKey: tool.defaultsKey)
+                }
             }
             // Cached so JobOptions.current can gate version-specific flags without blocking.
             if let v = result[.ytDlp]?.version {
@@ -330,23 +347,41 @@ final class DependencyManager: ObservableObject {
         }
     }
 
+    // MARK: Verified downloads
+
+    /// Fetches a small text file (a checksum list) over HTTPS.
+    private func fetchText(_ url: URL) async throws -> String {
+        let (data, response) = try await URLSession.shared.data(from: url)
+        if let http = response as? HTTPURLResponse, http.statusCode != 200 {
+            throw InstallError.download("GitHub answered \(http.statusCode).")
+        }
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    /// Downloads `url`, and refuses it unless its SHA-256 equals `expected`.
+    private func downloadVerified(_ url: URL, expectedHash: String) async throws -> URL {
+        let (tmp, response) = try await URLSession.shared.download(from: url)
+        if let http = response as? HTTPURLResponse, http.statusCode != 200 {
+            try? FileManager.default.removeItem(at: tmp)
+            throw InstallError.download("GitHub answered \(http.statusCode).")
+        }
+        guard (try? Self.sha256Hex(of: tmp)) == expectedHash else {
+            try? FileManager.default.removeItem(at: tmp)
+            throw InstallError.checksum
+        }
+        return tmp
+    }
+
     private func downloadYtDlp() async throws {
         setLog("Downloading yt-dlp…")
-        guard
-            let url = URL(
-                string: "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos")
+        let base = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/"
+        guard let binary = URL(string: base + "yt-dlp_macos"), let sums = URL(string: base + "SHA2-256SUMS")
         else { return }
         do {
-            let (tmp, response) = try await URLSession.shared.download(from: url)
-            if let http = response as? HTTPURLResponse, http.statusCode != 200 {
-                throw InstallError.download("GitHub answered \(http.statusCode).")
-            }
-            let fm = FileManager.default
-            try fm.createDirectory(at: Self.managedBinDirectory, withIntermediateDirectories: true)
-            let dest = Self.managedBinDirectory.appendingPathComponent("yt-dlp")
-            if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
-            try fm.moveItem(at: tmp, to: dest)
-            try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dest.path)
+            let list = try await fetchText(sums)
+            guard let expected = Self.expectedHash(in: list, for: "yt-dlp_macos") else { throw InstallError.checksum }
+            let tmp = try await downloadVerified(binary, expectedHash: expected)
+            try Self.installAtomically(tmp, to: Self.managedBinDirectory.appendingPathComponent("yt-dlp"))
         } catch let error as InstallError {
             throw error
         } catch {
@@ -361,18 +396,18 @@ final class DependencyManager: ObservableObject {
         #else
             let asset = "deno-x86_64-apple-darwin.zip"
         #endif
-        guard
-            let url = URL(
-                string: "https://github.com/denoland/deno/releases/latest/download/" + asset)
+        let base = "https://github.com/denoland/deno/releases/latest/download/"
+        guard let archive = URL(string: base + asset), let sum = URL(string: base + asset + ".sha256sum")
         else { return }
         let fm = FileManager.default
         let scratch = fm.temporaryDirectory.appendingPathComponent("downer-deno-\(UUID().uuidString)")
         defer { try? fm.removeItem(at: scratch) }
         do {
-            let (tmp, response) = try await URLSession.shared.download(from: url)
-            if let http = response as? HTTPURLResponse, http.statusCode != 200 {
-                throw InstallError.download("GitHub answered \(http.statusCode).")
+            let list = try await fetchText(sum)
+            guard let expected = Self.expectedHash(in: list, for: asset, allowBare: true) else {
+                throw InstallError.checksum
             }
+            let tmp = try await downloadVerified(archive, expectedHash: expected)
             try fm.createDirectory(at: scratch, withIntermediateDirectories: true)
             let zip = scratch.appendingPathComponent("deno.zip")
             try fm.moveItem(at: tmp, to: zip)
@@ -383,15 +418,55 @@ final class DependencyManager: ObservableObject {
             guard fm.fileExists(atPath: unpacked.path) else {
                 throw InstallError.download("The archive did not contain deno.")
             }
-            try fm.createDirectory(at: Self.managedBinDirectory, withIntermediateDirectories: true)
-            let dest = Self.managedBinDirectory.appendingPathComponent("deno")
-            if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
-            try fm.moveItem(at: unpacked, to: dest)
-            try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dest.path)
+            try Self.installAtomically(unpacked, to: Self.managedBinDirectory.appendingPathComponent("deno"))
         } catch let error as InstallError {
             throw error
         } catch {
             throw InstallError.download(error.localizedDescription)
+        }
+    }
+
+    /// SHA-256 of a file as lowercase hex, read in chunks.
+    nonisolated static func sha256Hex(of url: URL) throws -> String {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        var hasher = SHA256()
+        while let chunk = try handle.read(upToCount: 1 << 20), !chunk.isEmpty { hasher.update(data: chunk) }
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// The hash for `asset` from `sha256sum`-style text ("<hash>  <name>"). A line with only a hash
+    /// counts when `allowBare` (a checksum file that belongs to a single asset).
+    nonisolated static func expectedHash(in text: String, for asset: String, allowBare: Bool = false) -> String? {
+        for line in text.split(whereSeparator: \.isNewline) {
+            let parts = line.split(whereSeparator: \.isWhitespace)
+            guard let first = parts.first else { continue }
+            let hash = first.lowercased()
+            guard hash.count == 64, hash.allSatisfy(\.isHexDigit) else { continue }
+            if parts.count == 1 {
+                if allowBare { return hash }
+                continue
+            }
+            let name = parts[1].hasPrefix("*") ? String(parts[1].dropFirst()) : String(parts[1])
+            if name == asset { return hash }
+        }
+        return nil
+    }
+
+    /// Puts `source` at `dest` in one step: it is staged next to `dest` (same volume), made
+    /// executable, then swapped in, so `dest` is always either the old or the new complete file.
+    nonisolated static func installAtomically(_ source: URL, to dest: URL) throws {
+        let fm = FileManager.default
+        let directory = dest.deletingLastPathComponent()
+        try fm.createDirectory(at: directory, withIntermediateDirectories: true)
+        let staged = directory.appendingPathComponent(".\(dest.lastPathComponent).\(UUID().uuidString).new")
+        defer { try? fm.removeItem(at: staged) }
+        try fm.moveItem(at: source, to: staged)
+        try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: staged.path)
+        if fm.fileExists(atPath: dest.path) {
+            _ = try fm.replaceItemAt(dest, withItemAt: staged)
+        } else {
+            try fm.moveItem(at: staged, to: dest)
         }
     }
 
@@ -410,11 +485,22 @@ final class DependencyManager: ObservableObject {
             case .ffmpeg, .ffprobe: return .manual
             }
         }
-        let brewPrefixes = ["/opt/homebrew/", "/usr/local/Cellar/", "/home/linuxbrew/.linuxbrew/"]
-        if brewPrefixes.contains(where: { resolvedPath.hasPrefix($0) }) {
-            return .brew(formula: tool.brewFormula)
-        }
+        // Homebrew only when the file really lives in its Cellar (a symlink from bin/ or opt/ resolves
+        // there). Other things under /opt/homebrew, such as pip or npm installs, are not brew's to upgrade.
+        if let formula = brewFormula(inResolvedPath: resolvedPath) { return .brew(formula: formula) }
         return .manual
+    }
+
+    /// The formula whose Cellar folder holds `path` ("…/Cellar/<formula>/<version>/…"), if it looks sane.
+    nonisolated static func brewFormula(inResolvedPath path: String) -> String? {
+        let roots = ["/opt/homebrew/Cellar/", "/usr/local/Cellar/", "/home/linuxbrew/.linuxbrew/Cellar/"]
+        guard let root = roots.first(where: { path.hasPrefix($0) }) else { return nil }
+        let parts = path.dropFirst(root.count).split(separator: "/", omittingEmptySubsequences: false)
+        guard parts.count >= 3, let name = parts.first.map(String.init), !name.isEmpty, !name.hasPrefix("-"),
+            name.allSatisfy({ $0.isLetter || $0.isNumber || "@._+-".contains($0) }),
+            !name.contains("..")
+        else { return nil }
+        return name
     }
 
     func updateMethod(for tool: Tool) -> UpdateMethod? {
