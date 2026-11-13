@@ -10,7 +10,7 @@
 #
 # Code signing: the app and Sparkle's helpers are signed with the self-signed certificate named by
 # DOWNER_SIGN_IDENTITY (default "Downer Code Signing"; a 40-character certificate hash also works). Create it once with
-# scripts/signing/create-identity.sh (see the README, "Making a release build"). The certificate's hash is part of the app's
+# scripts/signing/create-identity.sh (see docs/RELEASING.md). The certificate's hash is part of the app's
 # designated requirement, so macOS privacy grants (Full Disk Access, Files & Folders, Keychain "Always Allow") survive
 # updates only while every release is signed with the SAME certificate. An ad-hoc signature changes with every build.
 # DOWNER_SIGN_KEYCHAIN=/path/to/file.keychain-db makes codesign look in that keychain (used by tests with a temporary one).
@@ -61,7 +61,7 @@ else
   FOUND=$(security find-identity -p codesigning ${SIGN_KEYCHAIN:+"$SIGN_KEYCHAIN"} || true)
   if ! print -r -- "$FOUND" | grep -F -q -e "\"$IDENTITY\"" -e " $IDENTITY \""; then
     echo "error: no code-signing identity named \"$IDENTITY\" was found in your keychains." >&2
-    echo "Create it once with ./scripts/signing/create-identity.sh (README, \"Making a release build\")," >&2
+    echo "Create it once with ./scripts/signing/create-identity.sh (docs/RELEASING.md)," >&2
     echo "or import your backed-up .p12. To use another identity set DOWNER_SIGN_IDENTITY." >&2
     exit 1
   fi

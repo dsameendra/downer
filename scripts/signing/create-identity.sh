@@ -13,7 +13,7 @@
 #   2. bundles them into a .p12 protected by a password you type, saved as the backup file,
 #   3. imports that .p12 into ~/Library/Keychains/login.keychain-db, allowing /usr/bin/codesign to use the key,
 #   4. deletes the temp folder.
-# No trust step is needed: codesign signs with a certificate that is not marked trusted (verified; see the README).
+# No trust step is needed: codesign signs with a certificate that is not marked trusted (verified; see docs/RELEASING.md).
 # Nothing else on the system is touched: no trust settings, no other keychain.
 #
 # Environment: DOWNER_SIGN_IDENTITY (certificate name, default "Downer Code Signing"),

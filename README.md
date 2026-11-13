@@ -4,7 +4,7 @@
 
 # Downer
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-0074e8?style=flat-square)](LICENSE) ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-F0384A?style=flat-square) ![Liquid Glass](https://img.shields.io/badge/Liquid%20Glass-macOS%2026-30d158?style=flat-square)
+[![License: MIT](https://img.shields.io/badge/license-MIT-0074e8?style=flat-square)](LICENSE) ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-F0384A?style=flat-square) ![Liquid Glass](https://img.shields.io/badge/Liquid%20Glass-macOS%2026-30d158?style=flat-square) [![CI](https://img.shields.io/github/actions/workflow/status/dsameendra/Downer/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/dsameendra/Downer/actions/workflows/ci.yml)
 
 ### Video and audio downloads, native to your Mac.
 
@@ -12,165 +12,72 @@ Paste a link, add as many more as you like, and let Downer work through them in 
 
 _No terminal. No browser extension. Just a menu bar icon and a shortcut._
 
+**[Download the latest release](https://github.com/dsameendra/Downer/releases/latest)**
+
 </div>
 
-Downer is a lightweight native front end for `yt-dlp` and `ffmpeg`. Download video and audio, audio only, or
-video only, choose the resolution, container and audio quality, and queue single videos and playlists while
-something is already downloading. Built for macOS 26 with Liquid Glass, and it works on macOS 14 and later.
+Downer is a lightweight native app for [`yt-dlp`](https://github.com/yt-dlp/yt-dlp) and
+[`ffmpeg`](https://www.ffmpeg.org). Download video and audio, audio only or video only, pick the quality and format,
+and queue single videos and playlists while something is already downloading. Built for macOS 26 with Liquid Glass,
+and works on macOS 14 and later.
 
 <div align="center">
 
-**[What's new](#whats-new-in-210) · [Features](#features) · [Screenshots](#screenshots) · [Using Downer](#using-downer) · [Installation](#installation) · [Building from source](#building-from-source)**
+**[Features](#features) · [Install](#installation) · [Using Downer](#using-downer) · [Settings](#settings) · [Troubleshooting](#troubleshooting) · [Building](#building-from-source) · [Changelog](CHANGELOG.md)**
 
 </div>
 
 https://github.com/user-attachments/assets/ce59fdfd-23f9-4584-b3f4-2466414c2a74
 
-## What's new in 2.1.0
+## What's new in 2.1
 
-- **Sign in for videos that need it.** Optional, off by default, and it asks first with a consent screen. Downer always tries without cookies and only uses your browser's sign-in when a site says it is required. For Safari, Settings shows whether Downer has Full Disk Access and has a button that opens the right pane. It works for other sites that ask you to sign in, not just YouTube. See [Signing in](#signing-in-for-age-restricted-or-bot-checked-videos).
-- **Best Compatibility.** The H.264 switch is now called Best Compatibility, with an explanation in the **Information** section. See [Best Compatibility](#best-compatibility).
-- **MOV container**, next to MP4, MKV and WebM. WebM downloads fall back to MKV when a site has nothing WebM can hold, instead of failing.
-- **Extra yt-dlp arguments.** Add your own options to every download, from a list of common ones. Anything else is refused, with the reason shown. See [Extra yt-dlp arguments](#extra-yt-dlp-arguments).
-- **deno, recommended for YouTube.** Installed and updated from Settings, and passed to `yt-dlp` when your `yt-dlp` is new enough to use it.
-- **Update buttons** for `yt-dlp`, `ffmpeg` and `deno` (disabled while a download runs). Tools Downer downloads itself are checked against their published checksum before they are installed.
-- **Downer updates itself.** Using [Sparkle](https://sparkle-project.org), Downer asks on launch only when there is a new version, then installs it and relaunches itself, waiting for running downloads to finish. See [Updates](#updates). **If you are on 2.0.x, install 2.1.0 by hand once** (see [Installation](#installation)); after that it updates itself.
-- **Clearer, shorter messages** that wrap instead of being cut off, and say what to do next.
-- **Cancelling a link while it is being looked up** now stops the look-up.
-- **"HTTP Error 503"** failures are retried automatically, like other network hiccups.
+- **Sign in for videos that need it**: optional, off by default, and it asks first. See [Signing in](#signing-in-for-age-restricted-or-bot-checked-videos).
+- **[Best Compatibility](#best-compatibility)**: one switch for MP4s that play everywhere, fixing "sound but no picture" in QuickTime.
+- **MOV container**, and WebM downloads that fall back to MKV instead of failing.
+- **[Extra yt-dlp arguments](#extra-yt-dlp-arguments)** from a list of common options.
+- **Update buttons** for `yt-dlp`, `ffmpeg` and `deno`, and `deno` recommended for YouTube.
+- **Downer [updates itself](#updates).** On 2.0.x? Install 2.1 by hand once, and it takes care of the rest.
+- Clearer error messages that say what to do next.
 
-## What's new in 2.0.3
-
-- The panel at the bottom now grows to fit **Show in Finder** after a download, instead of letting it spill out.
-- The resolution, container and quality pickers are back to the original menus.
-
-## What's new in 2.0.2
-
-- **Made for the trackpad.** Swipe up with two fingers on the download tray to open it, down to tuck it away; it follows your fingers, glides to rest with the speed of your swipe, and hands over to the list when you reach the top.
-- **Swipe a row** sideways with two fingers to remove, cancel, retry or reveal it. A long swipe does the main action.
-- **Drag to reorder.** Press and hold a waiting link, then drag it to change when it downloads.
-- **Drop links in.** Drag a link from your browser onto the window or the menu bar icon.
-- **Glass switcher.** The download type is a glass control you can swipe.
-- **Menu bar popover:** swipe up to open the full window, down to dismiss.
-- **Haptics.** Subtle feedback on a trackpad (turn it off in Settings). Reduce Motion is respected everywhere. Every gesture also has a click, keyboard or VoiceOver equivalent.
-
-## What's new in 2.0
-
-- **Liquid Glass design.** Real glass on macOS 26 and later, a refined material look on macOS 14 and 15, and solid surfaces when Reduce Transparency is on.
-- **A download queue.** Add a video, a playlist, or several of each while something is already downloading. Everything is looked up first, then downloaded one after another.
-- **Playlists done properly.** A playlist shows up as a group with one row per video, each with its own progress. Failed videos can be retried on their own.
-- **Real progress.** A true progress bar and percentage, speed and time left, instead of raw tool output.
-- **Set up from Settings.** Downer finds `yt-dlp`, `ffmpeg` and `ffprobe`, and can install them for you.
-- **A smarter menu bar.** A new icon that fills with progress and shows the queue count, plus a global shortcut that opens the popover with your copied link already filled in.
-- **A new app icon** built in layers for Liquid Glass, with dark, clear and tinted looks.
-- **Appearance options.** Follow the device, or choose light or dark, and turn the background glow on or off.
+Older versions are in the [changelog](CHANGELOG.md).
 
 ## Features
 
 ### Downloading
 
-- Download **video + audio**, **audio only**, or **video only**.
-- Choose the **resolution** (from 240p up to 8K, capped at what the video offers), the **container** (MP4, MKV, WebM or MOV), the **audio quality** (best available, or capped at 128, 70 or 50 kbps), and the **audio format** (keep the source, or convert to MP3, AAC or Opus).
-- **Best Compatibility** forces MP4 with H.264 video and AAC audio, for files that play everywhere. See [below](#best-compatibility).
-- Pick where files are saved. Every choice is remembered, and shared between the window and the menu bar.
-- Each queued link keeps the settings it was added with, so changing a setting later never affects links that are already waiting.
+- **Video + audio**, **audio only** or **video only**.
+- **Resolution** from 240p up to 8K (capped at what the video offers), **container** (MP4, MKV, WebM or MOV),
+  **audio quality** (best, or capped at 128, 70 or 50 kbps) and **audio format** (keep the source, or convert to MP3,
+  AAC or Opus).
+- **[Best Compatibility](#best-compatibility)** for H.264 + AAC MP4s that play everywhere.
+- Every choice is remembered, and shared between the window and the menu bar.
 
 ### The queue
 
-- **Add at any time.** Paste a link and press Return, or press **Add to Queue**. The field clears so you can paste the next one. Pasting several links at once adds them all.
-- **Mix freely.** Single videos, playlists, or any combination. Links that are not valid, or are already in the queue, are ignored politely.
-- **One at a time, in order.** Downloads run strictly one after another, so your connection and your disk are never hammered.
-- **A tray that comes up from the bottom.** With more than one link, or a playlist, the download area becomes a tray. Drag the handle up to see every link and every video, drag it back down to tuck it away. Tap the header to toggle.
-- **Control each item.** Remove a waiting link, cancel the one running, cancel everything, retry what failed, or clear what finished.
-- **Automatic retry.** A network hiccup (for example an HTTP error) is retried once on its own. Links that are genuinely unavailable are not.
+- **Add links at any time.** Paste and press Return; the field clears for the next one. Pasting several links adds
+  them all. Invalid or duplicate links are ignored.
+- **Videos and playlists, mixed freely.** A playlist shows one row per video, each with its own progress.
+- **One at a time, in order**, so your connection and disk are never hammered. Each link keeps the settings it was
+  added with.
+- **A tray that comes up from the bottom** shows every link and video. Drag or two-finger swipe it up and down.
+- **Control each item**: remove, cancel, retry, reorder (press, hold and drag), or swipe a row sideways.
+- **Automatic retry** for network hiccups. Videos that are genuinely unavailable are not retried.
 - **Show in Finder** reveals every file the queue produced.
 
 ### Menu bar and shortcut
 
-- Downer lives in the menu bar. Click the icon for a compact popover with a link field and a Download button.
-- Set a **global shortcut** in Settings. Copy a link anywhere, press the shortcut, and the popover opens with the link already filled in. Press Return to start.
+Downer lives in the menu bar. Click the icon for a compact popover, or set a **global shortcut**: copy a link
+anywhere, press the shortcut, and the popover opens with the link already filled in.
 
 | Menu bar icon | Meaning |
 |---|---|
 | Double chevron | Idle |
 | Ring with a percentage | Downloading one video |
-| Ring with `3/12` | Downloading from a queue or a playlist (video 3 of 12) |
-| Check mark | Finished (shown for a couple of seconds) |
-| Orange dot | Something needs attention: a tool is missing, or a download failed |
+| Ring with `3/12` | Downloading from a queue or playlist (video 3 of 12) |
+| Check mark | Finished |
+| Orange dot | Something needs attention: a tool is missing, a download failed, or an update is ready |
 
-### Settings
-
-- **Appearance:** **Theme** (Device, Light or Dark), **Background glow** and **Haptic feedback**.
-- **Global Shortcut:** **Open quick download**. Record any key combination.
-- **Sign-in (browser cookies):** **Sign in with a browser**, off by default, described [below](#signing-in-for-age-restricted-or-bot-checked-videos).
-- **Requirements:** shows whether `yt-dlp`, `ffmpeg`, `ffprobe` and `deno` are installed, and their versions. Missing tools have an **Install** button, and installed ones an **Update** button (tools you installed another way show "Manual") and **Browse…**.
-  - **Update** is disabled while a download is running. Homebrew installs are updated with `brew`; tools Downer installed itself update themselves (`yt-dlp -U`, `deno upgrade`).
-  - `deno` is a JavaScript runtime, **recommended for YouTube**. Without it some YouTube videos may fail or offer fewer formats. Downer passes it to `yt-dlp` automatically, but only when your `yt-dlp` is 2025.11.12 or newer, so press **Update** on `yt-dlp` if needed.
-  - With Homebrew installed, Downer runs `brew install` for you.
-  - Without Homebrew, `yt-dlp` and `deno` are downloaded from their official releases into Downer's own folder, and installed only if the download matches the checksum published with it. `ffmpeg` needs Homebrew, and Downer will tell you so.
-  - Already installed somewhere else? Use **Browse…** to point Downer at it.
-- **Updates:** **Check for updates automatically** (on by default) and **Check now**. See [Updates](#updates).
-- **Advanced:** **Extra yt-dlp arguments**, described [below](#extra-yt-dlp-arguments).
-
-### Signing in for age-restricted or bot-checked videos
-
-Some videos need a signed-in session, for example YouTube's age check and bot check. Other sites that ask you to sign in work the same way. Downer can let `yt-dlp` use your browser's sign-in for those.
-
-- It is **off by default**. Turn on **Settings → Sign-in (browser cookies) → Sign in with a browser**, pick a browser and read the consent screen. Nothing is turned on until you press **Turn on**; **What does this do?** shows the same screen again.
-- Downer **always tries without cookies first**. The chosen browser's cookies are only used when a site says sign-in is required.
-- `yt-dlp` reads the browser's cookie store on your Mac, and the cookies are only sent to the site you are downloading from.
-- Downer never saves, copies, uploads or logs your cookies, and never sees your password.
-- Turning it off is immediate: it applies to links already in the queue too.
-- If the chosen browser is no longer installed, the menu shows **Choose a browser** and no cookies are used until you pick another. Downer never swaps in a different browser's cookies.
-- `yt-dlp` config files (such as `~/.config/yt-dlp/config`) cannot turn cookies on behind Downer's back: Downer cancels their cookie options, and stops them from writing an info file that could hold cookies. A `yt-dlp.conf` that ends up in your download folder is never read: Downer runs `yt-dlp` from its own private temporary folder.
-- macOS may ask for permission, depending on the browser:
-  - **Chrome, Brave, Edge, Chromium, Vivaldi, Opera:** macOS asks once to let Downer use the browser's "Safe Storage" item from your Keychain, which is how the cookies are decrypted.
-  - **Safari:** its cookies are protected, so Downer needs Full Disk Access, and macOS won't ask for it. With Safari chosen, Settings shows **Full Disk Access: granted** or **not granted**, and **Open Full Disk Access Settings** takes you to the right pane. After allowing it, **quit and reopen Downer**.
-  - **Firefox:** nothing extra.
-- Using your account with a downloader can lead YouTube to rate-limit or flag it. A secondary account is safer.
-
-### Best Compatibility
-
-Turn on **Best Compatibility** (under the Container picker) to save H.264 video with AAC audio in an MP4. These files play in QuickTime, on iPhones and almost anywhere else. It fixes the "audio but no picture" problem in QuickTime, which happens when a YouTube MP4 holds AV1 video or Opus audio that QuickTime cannot show. The **Information** section explains it too.
-
-- The container is fixed to MP4 while it is on.
-- Most YouTube videos offer H.264 only up to 1080p, so higher resolutions fall back to that.
-- Files are usually larger than the AV1 or VP9 alternatives.
-- The MOV container also asks for H.264 and AAC, because MOV can't hold the other codecs.
-
-### Extra yt-dlp arguments
-
-**Settings → Advanced → Extra yt-dlp arguments** adds your own options, for example `--limit-rate 2M`, `--embed-subs` or `-t mp4`, to every download.
-
-- They come **after** Downer's own format options, so they can override them. Downer's cookie, output and progress options come after yours and always win.
-- The quick look-up that reads a link's title only uses the options that change how the site is reached (`--proxy`, `--geo-verification-proxy`, `--xff`, `--source-address`, `--socket-timeout`, `-4`, `-6`, `--extractor-retries`, `--extractor-args`). Filters, waits and format choices apply only to the download, so they can't stall or empty the look-up.
-- Files from options such as `--split-chapters`, `--write-thumbnail` or `--write-subs` are saved in your download folder, next to the video.
-- Quotes and backslashes work as in a shell. The field says whether what you typed is accepted.
-- Only a list of common download options is allowed, not everything `yt-dlp` has:
-  - format selection and sorting (`-f`, `-S`, `--merge-output-format`, `-t` with `mp3`, `aac`, `mp4`, `mkv` or `sleep`)
-  - audio and containers (`-x`, `--audio-format`, `--remux-video`, `--recode-video`)
-  - network (`--limit-rate`, `--retries`, `--proxy`, `--sleep-interval`, `-N`, `-4` and `-6`)
-  - subtitles and thumbnails (`--write-subs`, `--embed-subs`, `--sub-langs`, `--embed-thumbnail`)
-  - metadata, chapters and SponsorBlock (`--embed-metadata`, `--embed-chapters`, `--sponsorblock-remove`)
-  - files (`--restrict-filenames`, `--no-overwrites`, `--no-part`)
-  - what to download (`--download-sections`, `--match-filters`, `--max-filesize`, the date filters)
-  - `--extractor-args`, but only for settings such as `youtube:player_client=web`
-- Everything else is refused, with the reason shown. For example: options Downer manages (output names and folders, progress, quiet mode, the ffmpeg location, playlist items), options that run commands or change Downer's tools (`--exec`, `--use-postprocessor`, `--update`, config locations), and options that touch or could expose cookies (anything `--cookies…`, `--verbose`, `--print-traffic`, info-file options; use the Sign-in setting instead).
-- Long options must be written in full: an abbreviation such as `--verb` is refused, and so is `--`. Bundled short flags such as `-46` are accepted only if every letter is allowed.
-- Links are not accepted here. Paste them in the link field.
-
-### Updates
-
-Downer updates itself with [Sparkle](https://sparkle-project.org).
-
-- With **Check for updates automatically** on (the default), Downer looks when it starts and then once a day. If there is a new version when it starts, it shows an update window; if you are up to date, it shows nothing. A later daily check doesn't open a window: an **Update available** button and an orange dot on the menu bar icon appear instead, and clicking either opens it.
-- In the window, choose **Install Update**, **Remind Me Later** or **Skip This Version**. Downer downloads the update, checks its signature, replaces itself and relaunches. If downloads are running, it waits for them to finish first ("Update will install when downloads finish").
-- **Check now** in Settings, or **Check for Updates…** in the menu bar icon's right-click menu, checks right away and tells you when you are up to date.
-- Privacy: Downer only fetches a small update list (`appcast.xml`) from the project's GitHub releases. It sends no system profile or other information about your Mac.
-- Updates are signed with the project's EdDSA key, and Downer refuses an update whose signature does not match.
-- Versions before 2.1.0 cannot update themselves. Install 2.1.0 from the [Releases](https://github.com/dsameendra/Downer/releases) page once, and it takes care of the rest.
-
-## Screenshots
+### Screenshots
 
 <table align="center">
   <tr>
@@ -195,125 +102,200 @@ Downer updates itself with [Sparkle](https://sparkle-project.org).
 
 </div>
 
+## Installation
+
+**You need** macOS 14 or later. Downer uses `yt-dlp` and `ffmpeg`, and recommends `deno` for YouTube; it can install
+them for you.
+
+1. **Download** the latest `.dmg` from [Releases](https://github.com/dsameendra/Downer/releases/latest), open it and
+   drag **Downer** onto **Applications**.
+2. **Allow it to run.** Downer is signed with its own certificate rather than a paid Apple Developer ID, so macOS may
+   say *"Downer.app can't be opened."* Run this once in Terminal:
+
+   ```bash
+   xattr -dr com.apple.quarantine /Applications/Downer.app
+   ```
+
+   Or, without Terminal: open the app once, then go to **System Settings → Privacy & Security** and press
+   **Open Anyway** next to the message about Downer.
+
+   Don't re-sign the app (for example with `codesign --sign -`): macOS would forget the permissions you gave it.
+3. **Install the tools.** Open **Settings → Requirements** and press **Install** next to anything missing. `ffmpeg`
+   needs [Homebrew](https://brew.sh); you can also run `brew install yt-dlp ffmpeg deno` yourself.
+4. **Allow folder access.** The first time Downer saves to a protected folder such as Downloads, macOS asks. Choose
+   **Allow**.
+
+From 2.1 on, Downer [updates itself](#updates).
+
 ## Using Downer
 
 1. Open **Downer**, or click its menu bar icon.
 2. Paste a video or playlist link and press **Return**.
 3. Choose **Video + Audio**, **Audio Only** or **Video Only**, and the quality and format you want.
-4. While it downloads, paste more links. They join the queue.
-5. Drag the tray handle up whenever you want to see what is happening to each video.
+4. Paste more links while it downloads. They join the queue.
+5. Drag the tray up to see what is happening to each video.
 6. When the queue finishes, press **Show in Finder**.
 
-Closing the window hides it (and the Dock icon). Click the menu bar icon to bring it back, or right-click it for **Open Downer** and **Quit Downer**.
+Closing the window hides it and the Dock icon. Click the menu bar icon to bring it back, or right-click it for
+**Open Downer**, **Check for Updates…** and **Quit Downer**.
 
-## Installation
+## Settings
 
-### 1. Download and install
+| Section | What it does |
+|---|---|
+| **Appearance** | Theme (Device, Light or Dark), background glow and haptic feedback |
+| **Global Shortcut** | The key combination that opens the quick download popover |
+| **Sign-in (browser cookies)** | Optional sign-in through your browser, off by default. See [below](#signing-in-for-age-restricted-or-bot-checked-videos). |
+| **Requirements** | Shows `yt-dlp`, `ffmpeg`, `ffprobe` and `deno` with their versions, with **Install**, **Update** and **Browse…** |
+| **Updates** | Check for updates automatically (on by default) and **Check now** |
+| **Advanced** | [Extra yt-dlp arguments](#extra-yt-dlp-arguments) |
 
-Head to the [GitHub Releases](https://github.com/dsameendra/Downer/releases) page and download the latest `.dmg`.
+About the tools:
 
-- Open the `.dmg`. A window appears with Downer and your Applications folder: drag **Downer** onto **Applications**.
-- Open **Settings → Requirements** and press **Install** next to anything that is missing. (`ffmpeg` needs [Homebrew](https://brew.sh). You can also run `brew install yt-dlp ffmpeg` yourself.)
+- With Homebrew, Downer installs and updates them with `brew`. Without it, `yt-dlp` and `deno` are downloaded from
+  their official releases into Downer's own folder, and only installed if they match their published checksum.
+  `ffmpeg` needs Homebrew.
+- **Update** is disabled while something is downloading, and downloads wait while a tool is being updated. Tools you
+  installed some other way show **Manual**.
+- `deno` is a JavaScript runtime, recommended for YouTube: without it some videos may fail or offer fewer formats.
+  Downer passes it to `yt-dlp` 2025.11.12 or newer automatically, so update `yt-dlp` if yours is older.
 
-### 2. Allow the app to run
+### Signing in for age-restricted or bot-checked videos
 
-macOS may block the app, saying:
+Some videos need a signed-in session, such as YouTube's age check and "confirm you're not a bot". Downer can let
+`yt-dlp` use your browser's sign-in for those, on YouTube and other sites.
 
-> "Downer.app can't be opened."
+- **Off by default.** Turn on **Settings → Sign-in → Sign in with a browser**, pick a browser and read the consent
+  screen. Nothing changes until you press **Turn on**.
+- **Only when needed.** Downer always tries without cookies first, and uses the browser's cookies only when a site
+  says sign-in is required.
+- **Stays on your Mac.** `yt-dlp` reads the cookies locally and sends them only to the site you are downloading from.
+  Downer never saves, copies, uploads or logs them, and never sees your password. `yt-dlp` config files can't turn
+  cookies on behind Downer's back.
+- **Off means off.** Turning it off applies immediately, including to links already queued.
+- **What macOS may ask:**
+  - **Chrome, Brave, Edge, Chromium, Vivaldi, Opera:** once, for the browser's "Safe Storage" Keychain item, which
+    is how the cookies are decrypted. Choose **Allow**.
+  - **Safari:** Downer needs Full Disk Access. Settings shows whether it has it and opens the right pane. After
+    allowing it, quit and reopen Downer.
+  - **Firefox:** nothing.
 
-This happens because the app is signed with a self-made certificate rather than a paid Apple Developer ID, so Apple has not notarized it. Remove the quarantine flag once with Terminal:
+Using your account with a downloader can lead a site to rate-limit or flag it. A secondary account is safer.
 
-```bash
-xattr -dr com.apple.quarantine /Applications/Downer.app
-```
+### Best Compatibility
 
-Do not re-sign the app (for example with `codesign --sign -`): that replaces its signature, and macOS would forget the permissions you granted (Full Disk Access, Files & Folders, Keychain).
+Turn on **Best Compatibility** (under the Container picker) to save H.264 video with AAC audio in an MP4. These files
+play in QuickTime, on iPhone and almost anywhere else. It fixes MP4s that play sound but show no picture in
+QuickTime, which happens when a YouTube MP4 holds AV1 video or Opus audio.
 
-Without Terminal: open the app once, then go to **System Settings → Privacy & Security**, scroll to the message about Downer and press **Open Anyway** (macOS 15 and later no longer offer "Open" on the right-click menu for this).
+- The container is MP4 while it is on.
+- Most YouTube videos offer H.264 only up to 1080p, so higher resolutions fall back to that.
+- Files are usually larger.
+- The MOV container always uses H.264 and AAC, since MOV can't hold the other codecs.
 
-### 3. Folder access
+### Extra yt-dlp arguments
 
-The first time Downer saves into a protected folder such as Downloads, macOS asks whether to allow it. Choose **Allow**. You can change this later in **System Settings → Privacy & Security → Files & Folders**.
+**Settings → Advanced → Extra yt-dlp arguments** adds your own options to every download, for example
+`--limit-rate 2M`, `--embed-subs` or `-t mp4`. Quotes and backslashes work as in a shell, and the field tells you
+whether what you typed is accepted.
+
+Only common download options are allowed:
+
+| Kind | Examples |
+|---|---|
+| Format selection and sorting | `-f`, `-S`, `--merge-output-format`, `-t` with `mp3`, `aac`, `mp4`, `mkv` or `sleep` |
+| Audio and containers | `-x`, `--audio-format`, `--remux-video`, `--recode-video` |
+| Network | `--limit-rate`, `--retries`, `--proxy`, `--sleep-interval`, `-N`, `-4`, `-6` |
+| Subtitles and thumbnails | `--write-subs`, `--embed-subs`, `--sub-langs`, `--embed-thumbnail` |
+| Metadata, chapters, SponsorBlock | `--embed-metadata`, `--embed-chapters`, `--split-chapters`, `--sponsorblock-remove` |
+| Files | `--restrict-filenames`, `--no-overwrites`, `--no-part` |
+| What to download | `--download-sections`, `--match-filters`, `--max-filesize`, the date filters |
+| Site settings | `--extractor-args`, only for settings such as `youtube:player_client=web` |
+
+Everything else is refused, with the reason shown. That includes options Downer manages itself (output names and
+folders, progress, playlist items), options that run commands or change Downer's tools (`--exec`, `--update`, config
+locations), and anything that touches cookies (use the Sign-in setting instead). Write long options in full; an
+abbreviation such as `--verb` is refused.
+
+Good to know:
+
+- Your options come after Downer's format options, so they can override them. Downer's own output, cookie and
+  progress options always win.
+- Extra files, such as split chapters, thumbnails and subtitles, are saved next to the video.
+- The quick look-up that reads a link's title only uses connection options (`--proxy`, `--geo-verification-proxy`,
+  `--xff`, `--source-address`, `--socket-timeout`, `-4`, `-6`, `--extractor-retries`, `--extractor-args`), so
+  filters and waits can't stall it.
+
+### Updates
+
+Downer updates itself with [Sparkle](https://sparkle-project.org).
+
+- It checks when it starts and then once a day (turn this off in Settings). If a new version is out at launch, an
+  update window opens; later checks show an **Update available** button and an orange dot on the menu bar icon
+  instead.
+- Choose **Install Update**, **Remind Me Later** or **Skip This Version**. Downer verifies the update's signature,
+  replaces itself and relaunches, and waits for running downloads to finish first.
+- **Check now** in Settings, or **Check for Updates…** in the menu bar icon's right-click menu, checks right away.
+- Updates are signed, and Downer refuses one whose signature doesn't match.
+
+## Privacy
+
+Downer has no accounts, analytics or tracking. It connects to:
+
+- the sites you download from (through `yt-dlp`),
+- GitHub, to check for Downer updates (a small `appcast.xml`, with no information about your Mac), and to download
+  `yt-dlp` or `deno` when you press **Install**,
+- Homebrew, when you install or update tools with it.
+
+Browser cookies are only used if you turn on [Sign-in](#signing-in-for-age-restricted-or-bot-checked-videos).
 
 ## Troubleshooting
 
 | Problem | What to try |
 |---|---|
-| A "Setup needed" banner appears | Open Settings → Requirements and press Install next to what is missing. |
-| **Install** is greyed out for ffmpeg | Install [Homebrew](https://brew.sh) first, then try again. |
-| A video failed with an HTTP error | Downer retries these once automatically. If it still fails, press **Retry** on the row. |
-| A video says "unavailable" | The video is private, removed or restricted in your region. Retrying will not help. |
-| Nothing is saved | Check the **Save to** folder exists, and that Downer has permission to write to it. |
-| Downloads suddenly stop working for a site | Press **Update** next to `yt-dlp` in Settings → Requirements (sites change often). |
-| "YouTube wants you signed in" (or "This site wants you signed in") | Turn on **Sign in with a browser** in Settings → Sign-in (browser cookies). |
-| "Still blocked. Sign in to YouTube in Safari, then retry." | Sign in to the site in that browser, then press **Retry**. |
-| "Downer needs Full Disk Access to use Safari's sign-in." | Press **Open Full Disk Access Settings** in Settings → Sign-in, allow Downer, then **quit and reopen Downer**. Or pick another browser. |
-| macOS asks about a Keychain item ("Safe Storage"), or "Allow Keychain access to use … sign-in" appears | That is how Chrome-based browsers' cookies are decrypted. Choose Allow when asked, then retry. |
-| "Couldn't find … cookies" | Open that browser, sign in once, then retry. Or choose another browser. |
-| An MP4 plays sound but shows no picture in QuickTime | Turn on **Best Compatibility**. |
-| "yt-dlp may be out of date" | Press **Update** next to `yt-dlp` in Settings → Requirements. |
-| "The site is limiting requests" | Wait a while and try again. Signing in with your main account can make this worse. |
-| An extra argument is refused | The field shows why. Only [common options](#extra-yt-dlp-arguments) are allowed. |
-| A Downer update is waiting | It installs when your downloads finish. Press **Update available** (or **Check for Updates…** in the menu bar icon's menu) to see it. |
+| "Downer.app can't be opened" | See [Installation](#installation), step 2. |
+| A "Setup needed" banner | Open **Settings → Requirements** and press **Install** next to what is missing. |
+| **Install** is greyed out for ffmpeg | Install [Homebrew](https://brew.sh) first. |
+| Downloads suddenly stop working for a site, or "yt-dlp may be out of date" | Press **Update** next to `yt-dlp` in Settings → Requirements. Sites change often. |
+| "YouTube wants you signed in" | Turn on [Sign in with a browser](#signing-in-for-age-restricted-or-bot-checked-videos). |
+| "Still blocked. Sign in to YouTube in …" | Sign in to the site in that browser, then press **Retry**. |
+| "Downer needs Full Disk Access to use Safari's sign-in" | Press **Open Full Disk Access Settings**, allow Downer, then quit and reopen it. Or pick another browser. |
+| macOS asks about a "Safe Storage" Keychain item | That is how Chrome-based browsers' cookies are decrypted. Choose **Allow**, then retry. |
+| "Couldn't find … cookies" | Open that browser, sign in once, then retry. |
+| An MP4 plays sound but no picture | Turn on [Best Compatibility](#best-compatibility). |
+| A video failed with an HTTP error | Downer retries once by itself. If it still fails, press **Retry**. |
+| "This video is unavailable" | It is private, removed or blocked in your region. Retrying won't help. |
+| "The site is limiting requests" | Wait a while and try again. |
+| Nothing is saved | Check that the **Save to** folder exists and that Downer may write to it. |
+| An extra argument is refused | The field says why. Only [common options](#extra-yt-dlp-arguments) are allowed. |
+| An update is waiting | It installs when your downloads finish. |
 
 ## Building from source
 
-### Requirements
-
-- macOS 14 or later to run. Xcode 26 or later to build, so the Liquid Glass APIs are available.
-- `yt-dlp`, `ffmpeg` and `ffprobe` installed anywhere on disk, or installed from Downer's Settings. `deno` is recommended for YouTube.
-
-### Steps
-
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/dsameendra/Downer.git
-   cd Downer
-   ```
-2. Open `Downer.xcodeproj` in Xcode. The [KeyboardShortcuts](https://github.com/sindresorhus/KeyboardShortcuts) package is fetched automatically.
-3. Choose your own signing team: select the **Downer** target, open **Signing & Capabilities**, and pick your team. Automatic signing is enough for local builds.
-4. Build and run.
-
-### Installing a local build
-
-1. In Xcode choose **Product → Archive**.
-2. In the Organizer choose **Distribute App → Custom → Copy App**.
-3. Copy the exported `Downer.app` into `/Applications`.
-
-### Making a release build
+You need Xcode 26 or later (for the Liquid Glass APIs).
 
 ```bash
-./scripts/make-dmg.sh
+git clone https://github.com/dsameendra/Downer.git
+cd Downer
+open Downer.xcodeproj
 ```
 
-This builds a universal Release app, signs it with the "Downer Code Signing" certificate, draws the installer window and writes `dist/Downer-<version>.dmg` with a checksum next to it. It needs Xcode and Python 3; the DMG tool is installed into `dist/.venv` the first time.
+Select the **Downer** target, choose your own team under **Signing & Capabilities**, then build and run. The Swift
+packages ([Sparkle](https://sparkle-project.org) and
+[KeyboardShortcuts](https://github.com/sindresorhus/KeyboardShortcuts)) are fetched automatically.
 
-#### One-time: the code-signing certificate
+To install your build, choose **Product → Archive**, then **Distribute App → Custom → Copy App**, and copy
+`Downer.app` into `/Applications`.
 
-macOS remembers privacy grants (Full Disk Access, Files & Folders, the Keychain "Always Allow" for Chrome Safe Storage) by the app's *designated requirement*. An ad-hoc signature makes that requirement the hash of each build, so every update would reset the grants. A self-signed certificate makes it "this bundle id and this certificate", which stays the same for every release signed with it. Sparkle's EdDSA key is separate and still signs the DMG.
+Run the tests:
 
-1. Run `./scripts/signing/create-identity.sh`. It asks for a backup password, creates a 10-year self-signed Code Signing certificate named "Downer Code Signing", writes the backup `~/Downer-Code-Signing-backup.p12` and imports the identity into your login Keychain (allowing `codesign` to use it). No trust settings are changed and nothing needs to be "trusted": `security find-identity -p codesigning` lists it as `CSSMERR_TP_NOT_TRUSTED`, which does not stop `codesign` or the app from working.
-   - By hand instead: Keychain Access → Certificate Assistant → Create a Certificate…, name `Downer Code Signing`, Identity Type **Self Signed Root**, Certificate Type **Code Signing**, then Create.
-2. Back up the identity and keep the file safe (password manager or encrypted disk, never in git). In Keychain Access, select the "Downer Code Signing" certificate under My Certificates, File → Export Items…, format `.p12`, with a password. To restore on another Mac, double-click the `.p12`.
-3. `make-dmg.sh` stops with a pointer back here if the identity is missing. It prints the app's designated requirement and refuses a release whose requirement is cdhash based. Use another name with `DOWNER_SIGN_IDENTITY`. The first build may show "codesign wants to use the key": choose Always Allow.
+```bash
+xcodebuild test -project Downer.xcodeproj -scheme Downer -destination 'platform=macOS' -only-testing:DownerTests
+./scripts/test-gestures.sh
+```
 
-If the certificate is lost, releases can still be signed with a new one and Sparkle still installs them (the EdDSA key vouches for the update), but the designated requirement changes once, so every user's privacy grants reset one time. Hardened runtime is not enabled: it needs library validation, which requires a Team ID that a self-signed certificate does not have.
-
-Updates are delivered by [Sparkle](https://sparkle-project.org). Setting it up once:
-
-1. Run `generate_keys` from the Sparkle package (after one Xcode build it is at `<DerivedData>/Downer-*/SourcePackages/artifacts/sparkle/Sparkle/bin/generate_keys`). It stores the private key in your login Keychain and prints the public key.
-2. Paste the public key into `DOWNER_SU_PUBLIC_ED_KEY` in `Downer.xcodeproj` (the app target's build settings). `make-dmg.sh` refuses to build while it is still the placeholder.
-3. Back up the private key (`generate_keys -x key-file`) somewhere safe. Without it, installed copies can never be updated.
-
-For every release the script also signs the DMG with that key and writes `dist/appcast.xml`, with the release notes from `docs/release-notes/<version>.md` embedded (write that file first; the build stops without it). Raise `CURRENT_PROJECT_VERSION` for every release: Sparkle compares that number, not the version name, and never downgrades. The script fetches the published appcast and refuses a build number that is not higher than every one in it (`SKIP_BUILD_NUMBER_CHECK=1` turns the check off; if no appcast is published yet it just says so). Set `SPARKLE_ED_KEY_FILE` to sign with an exported key file instead of the Keychain.
-
-Publishing, in this order, so installed copies never see a release that is missing its files:
-
-1. Create the GitHub release `v<version>` as a **draft** (`gh release create v<version> --draft --title "Downer <version>" --notes-file docs/release-notes/<version>.md`).
-2. Upload `dist/Downer-<version>.dmg`, its `.sha256` and `dist/appcast.xml` to the draft.
-3. Publish it. Installed copies read `releases/latest/download/appcast.xml`, and GitHub picks "latest" as the most recent release that is neither a draft nor a pre-release, so it only points at the new release once step 3 is done. Do not mark a release as a pre-release if it should be offered to everyone.
-
-To exercise the pipeline without the real key, run `./scripts/tests/appcast-smoke.sh`. Builds made with `ALLOW_PLACEHOLDER_KEY=1`, or with `EXTRA_XCODEBUILD_SETTINGS="DOWNER_SU_PUBLIC_ED_KEY=<key>"` plus `SPARKLE_ED_KEY_FILE`, are test builds (they always need `SPARKLE_ED_KEY_FILE`, may sign ad hoc with `DOWNER_SIGN_IDENTITY=-`, and the smoke test does): they write to `dist/test/` with `-UNSIGNED-TEST` in the file name and must never be uploaded.
+Making a signed release (certificate, Sparkle key, DMG, appcast and publishing) is described in
+[`docs/RELEASING.md`](docs/RELEASING.md).
 
 ### How it is put together
 
@@ -327,28 +309,36 @@ To exercise the pipeline without the real key, run `./scripts/tests/appcast-smok
 | `YtDlpArguments.swift` | Builds every `yt-dlp` command line, for look-ups and downloads |
 | `ExtraArguments.swift` | Splits and checks your extra `yt-dlp` arguments |
 | `CookieBrowser.swift`, `CookieConsentSheet.swift` | The opt-in browser sign-in and its consent screen |
-| `FullDiskAccess.swift` | Checks Safari's Full Disk Access, opens its Settings pane, and builds yt-dlp's environment |
+| `FullDiskAccess.swift` | Checks Safari's Full Disk Access and builds `yt-dlp`'s environment |
 | `ErrorHints.swift` | Turns `yt-dlp` errors into a next step |
-| `UpdateChecker.swift` | Connects Sparkle (check, download, verify, relaunch) to Downer's Settings, update button and menu |
-| `Config/Downer-Info.plist` | Sparkle's settings: feed address, public key, check interval |
+| `UpdateChecker.swift` | Connects Sparkle to Downer's Settings, update button and menu |
 | `DependencyManager.swift` | Finds, installs and updates `yt-dlp`, `ffmpeg`, `ffprobe` and `deno` |
 | `DesignSystem.swift` | Liquid Glass, materials, motion, buttons and window chrome |
 | `MenuBarIcon.swift` | The menu bar icon and its states, drawn in code |
-| `Downer.icon` | The layered app icon |
-| `scripts/make-dmg.sh` | Builds the universal installer DMG and the signed `appcast.xml` (`scripts/dmg` holds its window design) |
-| `scripts/sparkle/` | Release helpers: signature check, release notes to HTML, build-number guard |
-| `docs/release-notes/` | One file per version, used for the GitHub release and the update window |
+| `scripts/make-dmg.sh` | Builds the installer DMG and the signed `appcast.xml` |
 
-See [`PRODUCT.md`](PRODUCT.md) for who Downer is for and [`DESIGN.md`](DESIGN.md) for the design decisions behind it.
+[`PRODUCT.md`](PRODUCT.md) describes who Downer is for, and [`DESIGN.md`](DESIGN.md) the design decisions behind it.
 
-## Disclaimer
+## Contributing
 
-This tool is intended solely for personal use and educational or research purposes.
+Issues and pull requests are welcome.
 
-Downloading videos from YouTube may violate their [Terms of Service](https://www.youtube.com/t/terms) unless the video has an explicit download button or the content is licensed in a way that permits downloading.
+- Open pull requests against `main`. CI builds the app, runs the tests and checks the release pipeline; it must pass
+  before a merge, and every pull request is reviewed by the maintainer.
+- Add tests for new behaviour, and update this README and the [changelog](CHANGELOG.md) when users will notice the
+  change.
+- Please report security problems privately, as described in [`SECURITY.md`](SECURITY.md), not in a public issue.
 
-By using this app, **you assume full responsibility** for any content you download and how you use it. The developer does not condone or support any misuse of this tool to infringe upon copyrights or violate platform rules.
+## License and disclaimer
+
+Downer is released under the [MIT License](LICENSE).
+
+It is meant for personal use and for educational or research purposes. Downloading from YouTube may break its
+[Terms of Service](https://www.youtube.com/t/terms) unless the video has a download button or its license allows it.
+**You are responsible** for what you download and how you use it. The developer does not support using Downer to
+infringe copyright or break platform rules.
 
 ---
 
-Built with ❤️ using [yt-dlp](https://github.com/yt-dlp/yt-dlp) and [ffmpeg](https://www.ffmpeg.org). Huge credit to the amazing developers behind these tools.
+Built with ❤️ on [yt-dlp](https://github.com/yt-dlp/yt-dlp) and [ffmpeg](https://www.ffmpeg.org). Huge thanks to
+the people behind them.
