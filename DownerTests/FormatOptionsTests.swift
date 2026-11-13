@@ -98,6 +98,36 @@ struct FormatOptionsTests {
         ] { #expect(refused(s), "\(s)") }
     }
 
+    @Test func refusesAbbreviatedLongFlags() {
+        for s in [
+            "--cookies-from-b chrome", "--cookies-from=chrome", "--cookies-from-browser=chrome",
+            "--verb", "--print-tr", "--exec-b x", "--exec-before x", "--cook x", "--dump-p", "--write-p",
+        ] { #expect(refused(s), "\(s)") }
+    }
+
+    @Test func refusesBundledShortFlags() {
+        for s in ["-4v", "-xo", "-xofile", "-qs", "-sv", "-4vq", "-iv"] { #expect(refused(s), "\(s)") }
+    }
+
+    @Test func refusesLoneDoubleDash() {
+        #expect(refused("--"))
+        #expect(ExtraArguments.validate(["--"])?.reason.contains("-- would stop Downer") == true)
+        #expect(ExtraArguments.parse("--limit-rate 2M -- -o x").isEmpty)
+    }
+
+    @Test func bypassStringsNeverParse() {
+        for s in ["--cookies-from-b chrome", "--verb", "--print-tr", "-4v", "-xofile", "--"] {
+            #expect(ExtraArguments.parse(s).isEmpty, "\(s)")
+        }
+    }
+
+    @Test func allowsValuesAttachedToValueTakingShorts() {
+        // the rest of the bundle is the value, not more flags
+        for s in ["-fbestvideo", "-N4", "-r2M", "-t mp4", "-fbestvideo[height<=720]", "-4", "-x", "--netrc", "--progress", "--no-mtime"] {
+            #expect(!refused(s), "\(s)")
+        }
+    }
+
     @Test func refusalsHaveReasons() {
         let r = ExtraArguments.validate(["--print-traffic"])?.reason
         #expect(r?.contains("cookies") == true)

@@ -87,16 +87,39 @@ enum ExtraArguments {
         .long("--config-locations", "--config-locations could load settings Downer can't check"),
     ]
 
+    /// Short options that take a value, so the rest of a bundle like `-N4` is that value.
+    /// Generated from `yt-dlp 2026.08.19 --help` (a short flag whose line shows a metavar).
+    private nonisolated static let shortsTakingValue: Set<Character> = [
+        "2", "I", "N", "O", "P", "R", "S", "a", "f", "o", "p", "r", "t", "u",
+    ]
+
+    /// Real yt-dlp options that are a prefix of a refused one. optparse prefers an exact
+    /// match over an abbreviation, so these are fine to allow (found from `--help`).
+    private nonisolated static let exactOptionsAllowed: Set<String> = ["--netrc", "--progress"]
+
+    private nonisolated static let loneDashDashReason = "-- would stop Downer's own options from working"
+
     nonisolated static func validate(_ tokens: [String]) -> ExtraArgumentsError? {
-        for token in tokens where token.hasPrefix("-") && token != "-" && token != "--" {
-            let isLong = token.hasPrefix("--")
-            for rule in rules {
-                switch rule {
-                case .long(let flag, let reason):
-                    if token == flag || token.hasPrefix(flag + "=") { return .init(reason: reason) }
-                case .short(let letter, let reason):
-                    // -o, -ofile and -o=file all start with the flag letter.
-                    if !isLong, token.dropFirst().first == letter { return .init(reason: reason) }
+        for token in tokens {
+            if token == "--" { return .init(reason: loneDashDashReason) }
+            guard token.hasPrefix("-"), token != "-" else { continue }
+
+            if token.hasPrefix("--") {
+                // yt-dlp (optparse) accepts any unambiguous abbreviation of a long option,
+                // so --cookies-from-b or --verb must be refused like the full flag.
+                let name = String(token.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)[0])
+                if exactOptionsAllowed.contains(name) { continue }
+                for case .long(let flag, let reason) in rules where flag.hasPrefix(name) {
+                    return .init(reason: reason)
+                }
+            } else {
+                // Bundled short flags (-4v): walk the letters like optparse does,
+                // stopping at an option that takes a value (the rest is that value).
+                for letter in token.dropFirst() {
+                    for case .short(let refusedLetter, let reason) in rules where refusedLetter == letter {
+                        return .init(reason: reason)
+                    }
+                    if shortsTakingValue.contains(letter) { break }
                 }
             }
         }
