@@ -14,15 +14,23 @@ enum YtDlpArguments {
         case download(pathFile: String, ffmpegDirectory: String, only: [Int]?)
     }
 
-    /// Order: format args (download only), extra args, cookies, Downer's own flags, the link.
+    /// Order: format args (download only), extra args, cookie flags, Downer's own flags, the link.
+    ///
+    /// yt-dlp also reads config files (~/.config/yt-dlp/config, ~/yt-dlp.conf, ...) that could turn
+    /// cookies on whatever Sign-in says. Downer's flags come last, so they win: with Sign-in off,
+    /// `--no-cookies --no-cookies-from-browser` cancel any cookie setting from a config; with it on,
+    /// `--no-cookies` first stops a config's `--cookies FILE` (which yt-dlp would also write back to).
     nonisolated static func build(
         for options: JobOptions, purpose: Purpose, useCookies: Bool, url: String
     ) -> [String] {
         var args: [String] = []
         if case .download = purpose { args += formatArguments(for: options) }
         args += options.extraArguments
+        args.append("--no-cookies")
         if useCookies, let browser = options.cookiesBrowser {
             args += ["--cookies-from-browser", browser.ytDlpName]
+        } else {
+            args.append("--no-cookies-from-browser")
         }
         if let runtime = options.jsRuntimePath { args += ["--js-runtimes", "deno:" + runtime] }
         switch purpose {

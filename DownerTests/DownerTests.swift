@@ -21,6 +21,8 @@ struct YtDlpArgumentsTests {
 
     let probeFlags = ["--flat-playlist", "--no-warnings", "--print", "%(playlist_title|)s\t%(title)s"]
     let link = "https://example.com/v"
+    /// Downer's own cookie flags with Sign-in off: they cancel any cookie setting from a yt-dlp config file.
+    let cookiesOff = ["--no-cookies", "--no-cookies-from-browser"]
 
     func download(only: [Int]? = nil) -> YtDlpArguments.Purpose {
         .download(pathFile: "/tmp/p.txt", ffmpegDirectory: "/opt/ff", only: only)
@@ -28,13 +30,14 @@ struct YtDlpArgumentsTests {
 
     @Test func probeHasNoFormatArgs() {
         let args = YtDlpArguments.build(for: options(), purpose: .probe(only: nil), useCookies: false, url: link)
-        #expect(args == probeFlags + [link])
+        #expect(args == cookiesOff + probeFlags + [link])
     }
 
     @Test func downloadOrdering() {
         let o = options()
         let args = YtDlpArguments.build(for: o, purpose: download(), useCookies: false, url: link)
         let expected = YtDlpArguments.formatArguments(for: o)
+            + cookiesOff
             + ["--print-to-file", "after_move:filepath", "/tmp/p.txt", "--newline", "--ffmpeg-location", "/opt/ff", link]
         #expect(args == expected)
     }
@@ -45,24 +48,30 @@ struct YtDlpArgumentsTests {
         let format = YtDlpArguments.formatArguments(for: o)
         #expect(Array(args.prefix(format.count)) == format)
         #expect(Array(args[format.count...].prefix(2)) == ["--foo", "bar"])
-        #expect(args[format.count + 2] == "--print-to-file")
+        #expect(Array(args[(format.count + 2)...].prefix(2)) == cookiesOff)
+        #expect(args[format.count + 4] == "--print-to-file")
         let probe = YtDlpArguments.build(for: o, purpose: .probe(only: nil), useCookies: false, url: link)
-        #expect(probe == ["--foo", "bar"] + probeFlags + [link])
+        #expect(probe == ["--foo", "bar"] + cookiesOff + probeFlags + [link])
     }
 
     @Test func cookiesOnlyWhenRequestedAndSet() {
         let withBrowser = options(cookies: .firefox, extra: ["--x"])
         let pair = ["--cookies-from-browser", "firefox"]
         let on = YtDlpArguments.build(for: withBrowser, purpose: .probe(only: nil), useCookies: true, url: link)
-        #expect(on == ["--x"] + pair + probeFlags + [link])
+        #expect(on == ["--x", "--no-cookies"] + pair + probeFlags + [link])
         let off = YtDlpArguments.build(for: withBrowser, purpose: .probe(only: nil), useCookies: false, url: link)
         #expect(!off.contains("--cookies-from-browser"))
+        #expect(off == ["--x"] + cookiesOff + probeFlags + [link])
         let none = YtDlpArguments.build(for: options(), purpose: download(), useCookies: true, url: link)
         #expect(!none.contains("--cookies-from-browser"))
+        #expect(none.contains("--no-cookies-from-browser"))  // nothing chosen: a config's browser is still cancelled
         let dl = YtDlpArguments.build(for: withBrowser, purpose: download(), useCookies: true, url: link)
         let i = dl.firstIndex(of: "--cookies-from-browser")!
         #expect(dl[i + 1] == "firefox")
         #expect(i < dl.firstIndex(of: "--print-to-file")!)
+        // --no-cookies precedes the browser flag, and a config's cookie jar can never be read or rewritten
+        #expect(dl.firstIndex(of: "--no-cookies")! < i)
+        #expect(!dl.contains("--no-cookies-from-browser"))
     }
 
     @Test func urlIsLast() {
@@ -75,7 +84,7 @@ struct YtDlpArgumentsTests {
 
     @Test func playlistItems() {
         let probe = YtDlpArguments.build(for: options(), purpose: .probe(only: [1, 3]), useCookies: false, url: link)
-        #expect(probe == probeFlags + ["--playlist-items", "1,3", link])
+        #expect(probe == cookiesOff + probeFlags + ["--playlist-items", "1,3", link])
         let dl = YtDlpArguments.build(for: options(), purpose: download(only: [4]), useCookies: false, url: link)
         #expect(Array(dl.suffix(3)) == ["--playlist-items", "4", link])
         let all = YtDlpArguments.build(for: options(), purpose: download(), useCookies: false, url: link)
