@@ -418,7 +418,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				DOWNER_SU_FEED_URL = "https://github.com/dsameendra/downer/releases/latest/download/appcast.xml";
-				DOWNER_SU_PUBLIC_ED_KEY = "REPLACE_WITH_SPARKLE_PUBLIC_ED_KEY";
+				DOWNER_SU_PUBLIC_ED_KEY = "/sE1fgTz6ZrHWdKHJZXqAWYSVvml9pgXIneMgdqapb0=";
 				INFOPLIST_FILE = Config/Downer-Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -452,7 +452,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				DOWNER_SU_FEED_URL = "https://github.com/dsameendra/downer/releases/latest/download/appcast.xml";
-				DOWNER_SU_PUBLIC_ED_KEY = "REPLACE_WITH_SPARKLE_PUBLIC_ED_KEY";
+				DOWNER_SU_PUBLIC_ED_KEY = "/sE1fgTz6ZrHWdKHJZXqAWYSVvml9pgXIneMgdqapb0=";
 				INFOPLIST_FILE = Config/Downer-Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
