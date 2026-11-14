@@ -351,6 +351,9 @@ struct DownloadStatusLine: View {
     let status: String
     let isDownloading: Bool
     var completions = 0
+    /// Lines the text may wrap to before it is cut off at the end (the full text stays in a tooltip).
+    /// The container grows with the text: the dock measures its content, and the pop-over gives it room.
+    var maxLines = 2
 
     private var completed: Bool { status.contains("completed") }
 
@@ -367,9 +370,11 @@ struct DownloadStatusLine: View {
                 .font(.system(size: 13))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-                .lineLimit(2)
+                .lineLimit(maxLines)
+                .truncationMode(.tail)
                 .fixedSize(horizontal: false, vertical: true)
                 .contentTransition(.opacity)
+                .help(status)
         }
         .motion(Motion.quick, value: status)
     }

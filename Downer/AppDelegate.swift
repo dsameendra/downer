@@ -49,7 +49,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
         popover = NSPopover()
         popover.behavior = .transient
         popover.delegate = self
-        popover.contentSize = NSSize(width: 360, height: 180)
+        popover.contentSize = NSSize(width: 360, height: 196)
         popover.contentViewController =
             NSHostingController(rootView: PopOverView())
 
@@ -74,7 +74,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
         let dl = DownloadManager.shared
         let deps = DependencyManager.shared
         dl.objectWillChange
-            .merge(with: deps.objectWillChange)
+            .merge(with: deps.objectWillChange, UpdateChecker.shared.objectWillChange)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.updateStatusItem() }
             .store(in: &cancellables)
@@ -87,6 +87,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
         KeyboardShortcuts.onKeyDown(for: .downloadShortcut) { [weak self] in
             self?.togglePopover(nil)
         }
+
+        UpdateChecker.shared.start()
     }
 
     // MARK: Menu bar icon
@@ -119,7 +121,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
             }
         } else if showingDone {
             state = .done
-        } else if dl.hadError || (deps.hasCheckedOnce && !deps.missing.isEmpty) {
+        } else if dl.hadError || (deps.hasCheckedOnce && !deps.missing.isEmpty)
+            || UpdateChecker.shared.updatePending
+        {
             state = .attention
         } else {
             state = .idle
@@ -142,6 +146,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
     // context menu builder
     private func buildMenu() -> NSMenu {
         let menu = NSMenu()
+        // items with a target/action are otherwise re-enabled automatically, ignoring isEnabled
+        menu.autoenablesItems = false
 
         menu.addItem(
             NSMenuItem(
@@ -150,6 +156,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
                 keyEquivalent: ""
             )
         )
+
+        let updates = UpdateChecker.shared
+        let check = NSMenuItem(
+            title: updates.updatePending ? "Update Available…" : "Check for Updates…",
+            action: #selector(checkForUpdates),
+            keyEquivalent: ""
+        )
+        check.isEnabled = updates.isConfigured && updates.canCheck
+        menu.addItem(check)
 
         menu.addItem(.separator())
 
@@ -236,6 +251,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
         mainWindow!.makeKeyAndOrderFront(nil)
     }
     
+    @objc private func checkForUpdates() {
+        UpdateChecker.shared.checkForUpdates()
+    }
+
     // Quit handler
     @objc private func quitApp() {
         NSApp.terminate(nil)

@@ -13,7 +13,14 @@ struct SettingsView: View {
     @AppStorage("backgroundGlow") private var backgroundGlow = true
     @AppStorage(Haptics.storageKey) private var hapticsOn = true
     @AppStorage(AppearanceMode.storageKey) private var appearanceRaw = AppearanceMode.system.rawValue
+    @AppStorage("extraArguments") private var extraArgumentsText = ""
+    // browser sign-in: off unless the consent sheet's "Turn on" sets it
+    @AppStorage("cookiesEnabled") private var cookiesEnabled = false
+    @AppStorage("cookiesBrowser") private var cookiesBrowserRaw = ""
+    @State private var consent: ConsentMode?
     @ObservedObject private var deps = DependencyManager.shared
+    @ObservedObject private var updates = UpdateChecker.shared
+    @ObservedObject private var downloads = DownloadManager.shared
 
     var body: some View {
         ZStack {
@@ -28,7 +35,10 @@ struct SettingsView: View {
                 VStack(spacing: 14) {
                     appearanceGroup.appear(0)
                     shortcutGroup.appear(1)
-                    requirementsGroup.appear(2)
+                    signInGroup.appear(2)
+                    requirementsGroup.appear(3)
+                    updatesGroup.appear(4)
+                    advancedGroup.appear(5)
                 }
                 .padding(16)
                 .padding(.top, -4)
@@ -40,7 +50,7 @@ struct SettingsView: View {
                 .frame(maxHeight: .infinity, alignment: .top)
         }
         .tint(Brand.red)
-        .frame(width: 400, height: 405)
+        .frame(width: 400, height: 560)
         .onAppear { deps.refresh() }
     }
 
@@ -121,6 +131,206 @@ struct SettingsView: View {
         }
     }
 
+    private var advancedGroup: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            OptionGroup(title: "Advanced") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Extra yt-dlp arguments")
+                        .font(.system(size: 14))
+                    TextField("e.g. -t mp4", text: $extraArgumentsText)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13, design: .monospaced))
+                        .autocorrectionDisabled()
+                        .padding(.horizontal, 12)
+                        .frame(height: 30)
+                        .background(Color.primary.opacity(0.08), in: Capsule())
+                    extraArgumentsStatus
+                        .font(.system(size: 12))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.vertical, 10)
+                .padding(.horizontal, 14)
+            }
+            Text("Your arguments come after Downer's format options, so they can override them. Only common download options are allowed, such as -t mp4, --limit-rate 2M, --embed-subs. Anything else is refused.")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 14)
+        }
+    }
+
+    @ViewBuilder
+    private var extraArgumentsStatus: some View {
+        if extraArgumentsText.trimmingCharacters(in: .whitespaces).isEmpty {
+            Text("Optional. For example --limit-rate 2M or --embed-subs.")
+                .foregroundStyle(.secondary)
+        } else {
+            switch ExtraArguments.tokenize(extraArgumentsText) {
+            case .failure(let error):
+                Text(error.reason).foregroundStyle(Color.red)
+            case .success(let tokens):
+                if let error = ExtraArguments.validate(tokens) {
+                    Text(error.reason).foregroundStyle(Color.red)
+                } else {
+                    Text("These are added to every download").foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    // MARK: Sign-in (browser cookies)
+    private enum ConsentMode: Identifiable {
+        case turnOn, explain
+        var id: Self { self }
+    }
+
+    /// The browser Downer would really use: the stored one, only while it is installed.
+    /// nil means "Choose a browser" (never a silent substitute).
+    private var chosenBrowser: CookieBrowser? {
+        CookieBrowser(rawValue: cookiesBrowserRaw).flatMap { $0.isInstalled ? $0 : nil }
+    }
+
+    /// What the consent sheet starts on: the stored browser if it is installed, else the first installed one.
+    private var suggestedBrowser: CookieBrowser {
+        chosenBrowser ?? CookieBrowser.firstInstalled ?? .safari
+    }
+
+    private var signInGroup: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            OptionGroup(title: "Sign-in (browser cookies)") {
+                HStack(spacing: 14) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Sign in with a browser")
+                            .font(.system(size: 14))
+                        Text("For videos that need a signed-in session. Off by default.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
+                    // turning on only asks; the sheet's "Turn on" is what enables it
+                    Toggle(
+                        "Sign in with a browser",
+                        isOn: Binding(
+                            get: { cookiesEnabled },
+                            set: { on in
+                                if on { consent = .turnOn } else { cookiesEnabled = false }
+                            })
+                    )
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                }
+                .padding(.vertical, 8)
+                .padding(.leading, 14)
+                .padding(.trailing, 12)
+                .frame(minHeight: 58)
+
+                if cookiesEnabled {
+                    HStack(spacing: 14) {
+                        Text("Browser")
+                            .font(.system(size: 14))
+                        Spacer(minLength: 0)
+                        CookieBrowserMenu(
+                            selection: Binding(
+                                get: { chosenBrowser }, set: { cookiesBrowserRaw = $0?.rawValue ?? "" }))
+                    }
+                    .padding(.leading, 14)
+                    .padding(.trailing, 12)
+                    .frame(height: 46)
+                    .overlay(alignment: .top) { Divider().opacity(0.6).padding(.horizontal, 14) }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(
+                            chosenBrowser?.permissionNote
+                                ?? "That browser isn't installed, so no cookies are used. Choose another to sign in."
+                        )
+                        .font(.system(size: 12))
+                        .foregroundStyle(chosenBrowser == nil ? Color.orange : Color.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        if chosenBrowser == .safari { FullDiskAccessRow().padding(.vertical, 4) }
+                        Button("What does this do?") { consent = .explain }
+                            .buttonStyle(.link)
+                            .font(.system(size: 12))
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .overlay(alignment: .top) { Divider().opacity(0.6).padding(.horizontal, 14) }
+                }
+            }
+        }
+        .sheet(item: $consent) { mode in
+            CookieConsentSheet(
+                browser: suggestedBrowser,
+                readOnly: mode == .explain,
+                onTurnOn: { browser in
+                    cookiesBrowserRaw = browser.rawValue
+                    cookiesEnabled = true
+                    consent = nil
+                },
+                onClose: { consent = nil })
+        }
+    }
+
+    private var updatesGroup: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            OptionGroup(title: "Updates") {
+                HStack(spacing: 14) {
+                    Text("Check for updates automatically")
+                        .font(.system(size: 14))
+                    Spacer(minLength: 0)
+                    Toggle("Check for updates automatically", isOn: autoCheckBinding)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
+                .padding(.leading, 14)
+                .padding(.trailing, 12)
+                .frame(height: 46)
+                .overlay(alignment: .bottom) { Divider().opacity(0.6).padding(.horizontal, 14) }
+
+                HStack(spacing: 8) {
+                    updateStatus
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                    Button("Check now") { updates.checkForUpdates() }
+                        .buttonStyle(PillButtonStyle())
+                        .disabled(!updates.isConfigured || !updates.canCheck)
+                }
+                .padding(.leading, 14)
+                .padding(.trailing, 8)
+                .frame(minHeight: 44)
+            }
+            Text("Downer checks GitHub for new releases. Updates are signed and verified before they are installed.")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 14)
+        }
+    }
+
+    private var autoCheckBinding: Binding<Bool> {
+        Binding(
+            get: { updates.automaticChecks },
+            set: { updates.automaticChecks = $0 }
+        )
+    }
+
+    @ViewBuilder
+    private var updateStatus: some View {
+        if !updates.isConfigured {
+            Text("Downer \(UpdateChecker.currentVersion). Updates are not set up in this build.")
+        } else if updates.installWaitingForDownloads {
+            Text("Update will install when downloads finish")
+        } else if let last = updates.lastChecked {
+            Text("Downer \(UpdateChecker.currentVersion). Last checked \(last.formatted(date: .abbreviated, time: .shortened))")
+        } else {
+            Text("Downer \(UpdateChecker.currentVersion). Not checked yet")
+        }
+    }
+
     private var requirementsGroup: some View {
         VStack(alignment: .leading, spacing: 8) {
             OptionGroup(title: "Requirements") {
@@ -136,11 +346,15 @@ struct SettingsView: View {
     private var requirementsFooter: some View {
         let text: String? = {
             if let failure = deps.failure { return failure }
-            if !deps.installing.isEmpty { return deps.log.isEmpty ? "Installing…" : deps.log }
+            if !deps.installing.isEmpty { return deps.log.isEmpty ? "Working…" : deps.log }
+            if let notice = deps.notice { return notice }
             if deps.brewPath == nil && !deps.missing.isEmpty {
                 return deps.missing.contains(where: { $0 != .ytDlp })
                     ? "ffmpeg needs Homebrew. yt-dlp can be installed without it."
                     : nil
+            }
+            if deps.recommendedMissing.contains(.deno) {
+                return "deno is recommended: YouTube downloads can miss formats without it."
             }
             return nil
         }()
@@ -174,18 +388,22 @@ struct SettingsView: View {
                 .frame(width: 58, alignment: .leading)
 
             HStack(spacing: 6) {
-                Image(systemName: installed ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                Image(systemName: installed ? "checkmark.circle.fill"
+                    : tool.isRequired ? "exclamationmark.circle.fill" : "plus.circle.fill")
                     .font(.system(size: 11))
-                    .foregroundStyle(installed ? Color.green : Color.orange)
+                    .foregroundStyle(installed ? Color.green : tool.isRequired ? Color.orange : Color.secondary)
                     .contentTransition(.symbolEffect(.replace))
                     .symbolEffect(.bounce, value: installed)
-                Text(statusText(installed: installed, version: st?.version, busy: busy))
+                Text(statusText(tool, installed: installed, version: st?.version, busy: busy))
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .contentTransition(.opacity)
-                    .help(st?.path ?? "")
+                    .help(st?.path ?? tool.subtitle)
+                    .accessibilityLabel(
+                        installed && !busy ? "Installed" + (st?.version.map { ", version \($0)" } ?? "")
+                            : statusText(tool, installed: installed, version: st?.version, busy: busy))
             }
             .padding(.horizontal, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -198,12 +416,23 @@ struct SettingsView: View {
                     .frame(width: 70)
                     .transition(.opacity)
             } else if installed {
+                if case .manual = deps.updateMethod(for: tool) {
+                    Text("Manual")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .help("Installed manually. Update it the way you installed it.")
+                } else {
+                    Button("Update") { deps.update(tool) }
+                        .buttonStyle(PillButtonStyle())
+                        .disabled(downloads.isActive)
+                        .help(downloads.isActive ? "Wait for the downloads to finish." : "")
+                }
                 Button("Browse…") { choosePath(for: binding) }
                     .buttonStyle(PillButtonStyle())
             } else {
                 Button("Install") { deps.install(tool) }
                     .buttonStyle(PrimaryPillButtonStyle())
-                    .disabled(tool != .ytDlp && deps.brewPath == nil)
+                    .disabled(tool.needsHomebrew && deps.brewPath == nil)
             }
         }
         .padding(.leading, 14)
@@ -219,10 +448,23 @@ struct SettingsView: View {
         }
     }
 
-    private func statusText(installed: Bool, version: String?, busy: Bool) -> String {
-        if busy { return "Installing…" }
-        if !installed { return deps.hasCheckedOnce ? "Not found" : "Checking…" }
-        return version.map { "Installed · \($0)" } ?? "Installed"
+    private func statusText(_ tool: Tool, installed: Bool, version: String?, busy: Bool) -> String {
+        Self.statusText(
+            installed: installed, version: version, busy: busy, checkedOnce: deps.hasCheckedOnce,
+            required: tool.isRequired)
+    }
+
+    /// The text in a tool's status pill. Installed tools show just their version (the green check already
+    /// says "installed"), so it fits next to the Update and Browse… buttons.
+    nonisolated static func statusText(
+        installed: Bool, version: String?, busy: Bool, checkedOnce: Bool, required: Bool
+    ) -> String {
+        if busy { return "Working…" }
+        if !installed {
+            if !checkedOnce { return "Checking…" }
+            return required ? "Not found" : "Recommended"
+        }
+        return version ?? "Installed"
     }
 
     private func pathBinding(for tool: Tool) -> Binding<String> {

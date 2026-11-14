@@ -22,6 +22,7 @@ struct MainAppView: View {
         .rawValue
     @AppStorage("selectedResolution") private var selectedResolution = "1080"
     @AppStorage("selectedVideoFormat") private var selectedVideoFormat = "mp4"
+    @AppStorage("compatibilityH264") private var compatibilityH264 = false
     @AppStorage("selectedAudioQuality") private var selectedAudioQuality =
         "source"
     @AppStorage("selectedAudioFormat") private var selectedAudioFormat = "opus"
@@ -54,7 +55,7 @@ struct MainAppView: View {
     private let resolutionOptions = [
         "4320", "2160", "1080", "720", "480", "360", "240",
     ]
-    private let videoFormatOptions = ["mp4", "mkv", "webm"]
+    private let videoFormatOptions = ["mp4", "mkv", "webm", "mov"]
 
     private let audioQualityOptions: [(label: String, value: String)] = [
         ("Best available", "source"),
@@ -80,6 +81,7 @@ struct MainAppView: View {
             ScrollView {
                 VStack(spacing: 14) {
                     setupBanner
+                    signInBanner
                     urlField.appear(0)
                     typeSelector.appear(1)
                     optionGroups.appear(2)
@@ -101,13 +103,16 @@ struct MainAppView: View {
 
             VStack {
                 TitleBarRow(title: "Downer") {
-                    SettingsLink {
-                        Image(systemName: "slider.horizontal.3")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundStyle(.primary)
+                    HStack(spacing: 8) {
+                        UpdateBadge()
+                        SettingsLink {
+                            Image(systemName: "slider.horizontal.3")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundStyle(.primary)
+                        }
+                        .buttonStyle(GlassCircleButtonStyle())
+                        .help("Settings")
                     }
-                    .buttonStyle(GlassCircleButtonStyle())
-                    .help("Settings")
                 }
                 Spacer()
             }
@@ -165,6 +170,39 @@ struct MainAppView: View {
                 Spacer()
                 SettingsLink { Text("Set up") }
                     .buttonStyle(PillButtonStyle())
+            }
+            .padding(.leading, 14)
+            .padding(.trailing, 10)
+            .frame(height: 52)
+            .downerSurface()
+            .transition(.opacity.combined(with: .move(edge: .top)))
+        }
+    }
+
+    /// Offered only after a link failed for want of a sign-in; opening Settings is the person's choice.
+    @ViewBuilder
+    private var signInBanner: some View {
+        let needsAccess = dl.jobs.contains { $0.state == .failed && $0.suggestsFullDiskAccess }
+        if needsAccess || dl.jobs.contains(where: { $0.state == .failed && $0.suggestsSignInSetting }) {
+            HStack(spacing: 10) {
+                Image(systemName: needsAccess ? "lock.shield" : "person.crop.circle.badge.exclamationmark")
+                    .foregroundStyle(.orange)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(needsAccess ? "Full Disk Access needed" : "Sign-in needed")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text(needsAccess ? "Allow Downer, then quit and reopen it." : "Turn on Sign-in in Settings to try again.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                Spacer(minLength: 8)
+                if needsAccess {
+                    Button("Open Settings") { FullDiskAccess.openSettings() }
+                        .buttonStyle(PillButtonStyle())
+                } else {
+                    SettingsLink { Text("Open Settings") }
+                        .buttonStyle(PillButtonStyle())
+                }
             }
             .padding(.leading, 14)
             .padding(.trailing, 10)
@@ -236,11 +274,13 @@ struct MainAppView: View {
                         title: "Container",
                         options: videoFormatOptions.map { $0.uppercased() },
                         selection: Binding(
-                            get: { selectedVideoFormat.uppercased() },
+                            get: { compatibilityH264 ? "MP4" : selectedVideoFormat.uppercased() },
                             set: { selectedVideoFormat = $0.lowercased() }
-                        ),
-                        showsDivider: false
+                        )
                     )
+                    .disabled(compatibilityH264)
+                    .opacity(compatibilityH264 ? 0.5 : 1)
+                    compatibilityRow
                 }
                 .transition(.opacity.combined(with: .scale(scale: 0.97)))
             }
@@ -284,6 +324,21 @@ struct MainAppView: View {
             }
         }
         .motion(value: downloadType.wrappedValue)
+    }
+
+    private var compatibilityRow: some View {
+        HStack(spacing: 14) {
+            Text("Best Compatibility")
+                .font(.system(size: 14))
+            Spacer(minLength: 0)
+            Toggle("Best Compatibility", isOn: $compatibilityH264.animation())
+                .labelsHidden()
+                .toggleStyle(.switch)
+        }
+        .padding(.vertical, 8)
+        .padding(.leading, 14)
+        .padding(.trailing, 12)
+        .frame(minHeight: 52)
     }
 
     private var saveLocation: some View {
@@ -339,6 +394,12 @@ struct MainAppView: View {
                         title: "Video formats and quality",
                         description:
                             "In Video modes, the highest-quality video track up to your selected resolution is fetched and packaged in your chosen container."
+                    )
+                    InfoRow(
+                        icon: "checkmark.seal",
+                        title: "Best Compatibility",
+                        description:
+                            "Saves H.264 video with AAC audio in MP4, which plays in QuickTime, on iPhone and iPad, and almost everywhere. Files are larger, and most YouTube videos offer H.264 only up to 1080p."
                     )
                     InfoRow(
                         icon: "music.note",
@@ -409,7 +470,8 @@ struct MainAppView: View {
             DownloadStatusLine(
                 status: dl.status,
                 isDownloading: dl.isActive,
-                completions: dl.completions
+                completions: dl.completions,
+                maxLines: 3
             )
             .frame(minHeight: 18)
 

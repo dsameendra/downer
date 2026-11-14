@@ -1,7 +1,13 @@
 version: 2
 updates:
-  # Keeps the KeyboardShortcuts package up to date.
+  # Keeps the Swift packages (Sparkle, KeyboardShortcuts) up to date.
   - package-ecosystem: "swift"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  # Keeps the GitHub Actions used by CI up to date (they are pinned to commit SHAs).
+  - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"

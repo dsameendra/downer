@@ -17,6 +17,15 @@ struct JobOptions: Equatable {
     var audioQuality: String
     var audioFormat: String
     var folder: URL
+    /// nil = don't borrow a browser's login.
+    var cookiesBrowser: CookieBrowser? = nil
+    /// Prefer H.264 video so files play everywhere.
+    var compatibilityH264 = false
+    var extraArguments: [String] = []
+    /// deno (or another JS runtime) for YouTube's signature challenges; nil = none, or the yt-dlp is too old.
+    /// Not captured when a link is added: it depends on the yt-dlp that actually runs, so the look-up and
+    /// the download fill it in just before they start (`DependencyManager.jsRuntimePath(forYtDlpAt:)`).
+    var jsRuntimePath: String? = nil
 
     static func current(_ defaults: UserDefaults = .standard) -> JobOptions {
         let downloads =
@@ -28,7 +37,10 @@ struct JobOptions: Equatable {
             container: defaults.string(forKey: "selectedVideoFormat") ?? "mp4",
             audioQuality: defaults.string(forKey: "selectedAudioQuality") ?? "source",
             audioFormat: defaults.string(forKey: "selectedAudioFormat") ?? "opus",
-            folder: URL(fileURLWithPath: defaults.string(forKey: "destinationFolder") ?? downloads)
+            folder: URL(fileURLWithPath: defaults.string(forKey: "destinationFolder") ?? downloads),
+            cookiesBrowser: CookieBrowser.current(defaults),
+            compatibilityH264: defaults.bool(forKey: "compatibilityH264"),
+            extraArguments: ExtraArguments.parse(defaults.string(forKey: "extraArguments") ?? "")
         )
     }
 }
@@ -56,6 +68,13 @@ struct DownloadJob: Identifiable, Equatable {
     var only: [Int]?
     /// Set once a network hiccup has been retried automatically.
     var autoRetried = false
+    /// Set once a site has asked for a sign-in; from then on this job uses the chosen
+    /// browser's cookies (only ever true when the person turned Sign-in on).
+    var needsCookies = false
+    /// The failure is fixed by turning on Sign-in in Settings (never turned on automatically).
+    var suggestsSignInSetting = false
+    /// The failure is fixed by giving Downer Full Disk Access (Safari's cookies).
+    var suggestsFullDiskAccess = false
 
     var isPlaylist: Bool { playlist != nil }
     var isFinished: Bool { state == .done || state == .failed || state == .cancelled }
@@ -93,8 +112,10 @@ struct DownloadJob: Identifiable, Equatable {
 
     /// Network-level failures are worth one more try; "unavailable" or "private" are not.
     static func isTransient(_ reason: String?) -> Bool {
-        guard let reason = reason?.lowercased() else { return false }
-        let permanent = ["unavailable", "private", "copyright", "sign in", "age", "members", "removed", "not available", "geo"]
+        guard let reason = reason?.lowercased()
+            .replacingOccurrences(of: "service unavailable", with: "")  // a 503 is a hiccup, not "unavailable"
+        else { return false }
+        let permanent = ["unavailable", "private", "copyright", "sign in", "age-restricted", "age restricted", "confirm your age", "age verification", "members", "removed", "not available", "geo"]
         if permanent.contains(where: reason.contains) { return false }
         let transient = ["http error 4", "http error 5", "timed out", "connection", "reset by peer", "temporary failure", "unable to download", "incomplete", "stopped before"]
         return transient.contains(where: reason.contains)

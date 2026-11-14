@@ -9,6 +9,7 @@
 //
 
 import AppKit
+import Combine
 import Foundation
 
 @MainActor
@@ -26,7 +27,14 @@ final class DownloadManager: ObservableObject {
     private var runningID: UUID?
     private var tracker = PlaylistTracker()
     private var pathFile: URL?
-    private var lastErrorLine: String?
+    private var runDirectory: URL?
+    /// "Chrome sign-in · " while the running job uses a browser's cookies; fixed when the run starts, so
+    /// the many progress lines don't look the browser up again.
+    private var cookiePrefix = ""
+    /// ERROR and WARNING lines of the current run (in memory only, capped), used to pick an error hint.
+    private var errorLog = ErrorLog()
+    /// Shown instead of "Starting download…" when a job starts again after a retry, so the retry is visible.
+    private var startNotes: [UUID: String] = [:]
     private var wasCancelled = false
     private var stopQueue = false
     private var idleTask: Task<Void, Never>?
@@ -34,8 +42,23 @@ final class DownloadManager: ObservableObject {
     // look-ups run one at a time so pasting twenty links does not start twenty yt-dlps
     private var toResolve: [UUID] = []
     private var resolving = false
+    private var probeControl: ProbeControl?
+    private var probingID: UUID?
+    private var installObserver: AnyCancellable?
 
-    private init() {}
+    private init() {
+        // A tool update/install may be running; when it ends, carry on with what is waiting.
+        // (@Published emits before the change, so hop to the next turn to read the new value.)
+        installObserver = DependencyManager.shared.$installing
+            .filter { $0.isEmpty }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self, !self.stopQueue, self.runningID == nil,
+                    self.jobs.contains(where: { $0.state == .queued })
+                else { return }
+                self.resolveNext()
+            }
+    }
 
     #if DEBUG
         /// Previews and screenshots only: show a queue without running anything.
@@ -96,6 +119,7 @@ final class DownloadManager: ObservableObject {
             toResolve.append(job.id)
             added += 1
         }
+        if added > 0 { stopQueue = false }  // new links after a Cancel All still run
         if added == 0 {
             status = "Already in the queue."
         } else if isDownloading {
@@ -128,12 +152,20 @@ final class DownloadManager: ObservableObject {
     /// Stop everything, including what is waiting.
     func cancelAll() {
         stopQueue = true
-        for i in jobs.indices where jobs[i].state == .queued { jobs[i].state = .cancelled }
+        // a look-up in flight must stop too, and must never go on to the cookie probe
+        abandonProbe()
+        toResolve.removeAll()
+        for i in jobs.indices where jobs[i].state == .queued {
+            jobs[i].state = .cancelled
+            jobs[i].isResolving = false
+        }
+        startNotes.removeAll()
         if process != nil {
             wasCancelled = true
             process?.terminate()
         } else {
             status = "Download cancelled."
+            scheduleIdle()
         }
     }
 
@@ -152,9 +184,22 @@ final class DownloadManager: ObservableObject {
         if id == runningID {
             cancelCurrent()
         } else {
+            let wasProbing = id == probingID
+            if wasProbing { abandonProbe() }  // stops yt-dlp and skips the cookie retry
+            toResolve.removeAll { $0 == id }
+            startNotes[id] = nil
             jobs.removeAll { $0.id == id }
             if jobs.isEmpty { status = "Idle" }
+            if wasProbing { resolveNext() }  // the queue carries on with the next link
         }
+    }
+
+    /// Stops the look-up in flight (if any) and frees the look-up slot immediately.
+    private func abandonProbe() {
+        probeControl?.cancel()
+        probeControl = nil
+        probingID = nil
+        resolving = false
     }
 
     func retry(_ id: UUID) {
@@ -214,27 +259,60 @@ final class DownloadManager: ObservableObject {
 
     // MARK: Looking links up
     private func resolveNext() {
-        guard !resolving else { return }
+        guard !resolving, !stopQueue else { return }
+        if DependencyManager.shared.isBusy {
+            if jobs.contains(where: { $0.state == .queued }) && runningID == nil {
+                status = "Waiting for the update to finish…"
+            }
+            return
+        }
         while let id = toResolve.first {
             toResolve.removeFirst()
-            guard let job = jobs.first(where: { $0.id == id }), job.isResolving else { continue }
+            guard let job = jobs.first(where: { $0.id == id }), job.isResolving, job.state == .queued
+            else { continue }
             resolving = true
+            let control = ProbeControl()
+            probeControl = control
+            probingID = id
             let path = Self.path(for: .ytDlp)
             let url = job.url
             let only = job.only
+            var options = job.options
+            // decided for the yt-dlp that will actually run, not when the link was added
+            options.jsRuntimePath = DependencyManager.jsRuntimePath(forYtDlpAt: path)
             Task.detached { [weak self] in
-                let result = Self.probe(url: url, ytDlp: path, only: only)
-                await self?.applyProbe(result, to: id)
+                // always without cookies first; with them only after a sign-in failure
+                var result = Self.probe(
+                    url: url, ytDlp: path, options: options, only: only, useCookies: false, control: control)
+                var usedCookies = false
+                // the current Sign-in setting, not the one from when the link was added;
+                // never for a look-up that was cancelled (the cookie probe can raise a Keychain prompt)
+                if !control.isCancelled, result.value == nil, let browser = CookieBrowser.current(),
+                    ErrorHint.classify(result.errorText, cookiesBrowser: browser, usedCookies: false)?.isSignIn == true
+                {
+                    var withCookies = options
+                    withCookies.cookiesBrowser = browser
+                    usedCookies = true
+                    result = Self.probe(
+                        url: url, ytDlp: path, options: withCookies, only: only, useCookies: true, control: control)
+                }
+                await self?.applyProbe(
+                    result.value, usedCookies: usedCookies && result.value != nil, to: id, control: control)
             }
             return
         }
         pump()
     }
 
-    private func applyProbe(_ result: ProbeResult?, to id: UUID) {
+    private func applyProbe(_ result: ProbeResult?, usedCookies: Bool = false, to id: UUID, control: ProbeControl) {
+        // a look-up that was cancelled or removed already freed its slot; its late answer is ignored
+        guard probeControl === control else { return }
+        probeControl = nil
+        probingID = nil
         resolving = false
         if let i = jobs.firstIndex(where: { $0.id == id }) {
             jobs[i].isResolving = false
+            if usedCookies { jobs[i].needsCookies = true }
             if let result {
                 jobs[i].title = result.playlistTitle ?? result.titles.first
                 if let name = result.playlistTitle, result.titles.count > 1, jobs[i].state == .queued {
@@ -256,26 +334,50 @@ final class DownloadManager: ObservableObject {
     }
 
     /// One quick yt-dlp call that lists titles without downloading anything.
-    nonisolated private static func probe(url: String, ytDlp: String, only: [Int]?) -> ProbeResult? {
+    /// `errorText` is yt-dlp's stderr, kept in memory only so a sign-in failure can be recognised.
+    nonisolated private static func probe(
+        url: String, ytDlp: String, options: JobOptions, only: [Int]?, useCookies: Bool, control: ProbeControl
+    ) -> (value: ProbeResult?, errorText: String) {
+        guard let runDirectory = RunDirectory.make() else { return (nil, "") }
+        defer { RunDirectory.remove(runDirectory) }
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: ytDlp)
-        var args = ["--flat-playlist", "--no-warnings", "--print", "%(playlist_title|)s\t%(title)s"]
-        if let only { args += ["--playlist-items", only.map(String.init).joined(separator: ",")] }
-        args.append(url)
-        proc.arguments = args
+        proc.currentDirectoryURL = runDirectory  // not the app's own folder: see RunDirectory
+        proc.arguments = YtDlpArguments.build(
+            for: options, purpose: .probe(only: only), useCookies: useCookies, url: url)
+        proc.environment = YtDlpEnvironment.make(
+            base: ProcessInfo.processInfo.environment, ffmpegDirectory: nil, home: FullDiskAccess.realHome())
         let pipe = Pipe()
+        let errorPipe = Pipe()
         proc.standardOutput = pipe
-        proc.standardError = Pipe()
-        guard (try? proc.run()) != nil else { return nil }
+        proc.standardError = errorPipe
+        guard control.launch(proc) else { return (nil, "") }
+        defer { control.processEnded() }
+        try? pipe.fileHandleForWriting.close()
+        try? errorPipe.fileHandleForWriting.close()
 
-        // a link that never answers must not hold up the queue
+        // read stderr alongside stdout so neither pipe can fill up and stall yt-dlp
+        let errors = LockedText()
+        let errorDone = DispatchSemaphore(value: 0)
+        DispatchQueue.global().async {
+            errors.set(ErrorLog(output: errorPipe.fileHandleForReading.readDataToEndOfFile()).text)
+            errorDone.signal()
+        }
+
+        // a link that never answers must not hold up the queue; with cookies, leave time for the Keychain prompt
         let watchdog = DispatchWorkItem { if proc.isRunning { proc.terminate() } }
-        DispatchQueue.global().asyncAfter(deadline: .now() + 45, execute: watchdog)
+        DispatchQueue.global().asyncAfter(
+            deadline: .now() + QueueLogic.probeTimeout(useCookies: useCookies), execute: watchdog)
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         proc.waitUntilExit()
         watchdog.cancel()
-        guard proc.terminationStatus == 0 else { return nil }
+        errorDone.wait()
+        let errorText = errors.value
+        guard proc.terminationStatus == 0 else { return (nil, errorText) }
+        return (parse(data), errorText)
+    }
 
+    nonisolated private static func parse(_ data: Data) -> ProbeResult? {
         let lines = (String(data: data, encoding: .utf8) ?? "")
             .split(whereSeparator: \.isNewline).map(String.init)
         guard !lines.isEmpty else { return nil }
@@ -300,8 +402,15 @@ final class DownloadManager: ObservableObject {
             finishQueue()
             return
         }
+        // a tool is being updated or installed: wait, and carry on when it is done
+        if DependencyManager.shared.isBusy {
+            status = "Waiting for the update to finish…"
+            return
+        }
         // wait for the look-up so the job starts with real titles
         if next.isResolving {
+            // a retried link whose look-up was cut short must be looked up again, or it would wait forever
+            if probingID != next.id, !toResolve.contains(next.id) { toResolve.append(next.id) }
             status = "Checking link…"
             resolveNext()
             return
@@ -311,9 +420,16 @@ final class DownloadManager: ObservableObject {
 
     private func run(_ id: UUID) {
         guard let i = jobs.firstIndex(where: { $0.id == id }) else { return }
+        // Sign-in may have been switched off (or changed) since this link was queued
+        let browser = CookieBrowser.current()
+        if jobs[i].needsCookies, browser == nil { jobs[i].needsCookies = false }
         let job = jobs[i]
-        let fm = FileManager.default
+        var options = job.options
+        options.cookiesBrowser = browser
         let ytDlpPath = Self.path(for: .ytDlp)
+        // decided for the yt-dlp that will actually run (it may have been changed since the link was added)
+        options.jsRuntimePath = DependencyManager.jsRuntimePath(forYtDlpAt: ytDlpPath)
+        let fm = FileManager.default
         let ffmpegPath = Self.path(for: .ffmpeg)
         let ffprobePath = Self.path(for: .ffprobe)
 
@@ -329,70 +445,80 @@ final class DownloadManager: ObservableObject {
             return
         }
         guard fm.isExecutableFile(atPath: ytDlpPath) else {
-            stop("yt‑dlp not found.\nInstall it in Settings → Requirements.")
+            stop("yt‑dlp not found. Install it in Settings.")
             return
         }
         guard fm.isExecutableFile(atPath: ffmpegPath), fm.isExecutableFile(atPath: ffprobePath) else {
-            stop("ffmpeg / ffprobe not found.\nInstall them in Settings → Requirements.")
+            stop("ffmpeg not found. Install it in Settings.")
             return
         }
 
-        var args = Self.formatArguments(for: job.options)
         let pathFile = fm.temporaryDirectory.appendingPathComponent("downer-\(UUID().uuidString).txt")
         self.pathFile = pathFile
-        args += ["--print-to-file", "after_move:filepath", pathFile.path]
-        args += ["--newline", "--ffmpeg-location", (ffmpegPath as NSString).deletingLastPathComponent]
-        if let only = job.only { args += ["--playlist-items", only.map(String.init).joined(separator: ",")] }
-        args.append(job.url)
+        // cookies only once this job has hit a sign-in wall (see finished(code:job:))
+        let args = YtDlpArguments.build(
+            for: options,
+            purpose: .download(
+                pathFile: pathFile.path,
+                ffmpegDirectory: (ffmpegPath as NSString).deletingLastPathComponent,
+                outputFolder: job.options.folder.path,
+                only: job.only),
+            useCookies: job.needsCookies, url: job.url)
 
+        guard let workDirectory = RunDirectory.make() else {
+            stop("Couldn't prepare a working folder.")
+            return
+        }
+        self.runDirectory = workDirectory
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: ytDlpPath)
         proc.arguments = args
-        proc.currentDirectoryURL = job.options.folder
-        var env = ProcessInfo.processInfo.environment
-        env["PATH"] = "\((ffmpegPath as NSString).deletingLastPathComponent):" + (env["PATH"] ?? "")
-        proc.environment = env
+        proc.currentDirectoryURL = workDirectory  // never the download folder: see RunDirectory
+        proc.environment = YtDlpEnvironment.make(
+            base: ProcessInfo.processInfo.environment,
+            ffmpegDirectory: (ffmpegPath as NSString).deletingLastPathComponent,
+            home: FullDiskAccess.realHome())
 
         let pipe = Pipe()
         proc.standardOutput = pipe
         proc.standardError = pipe
-        let buffer = LineBuffer()
-        pipe.fileHandleForReading.readabilityHandler = { [weak self] h in
-            let data = h.availableData
-            guard !data.isEmpty else {
-                h.readabilityHandler = nil
-                return
-            }
-            guard let chunk = String(data: data, encoding: .utf8) else { return }
-            let complete = buffer.append(chunk)
-            guard !complete.isEmpty else { return }
-            Task { @MainActor in
-                for line in complete { self?.handle(line: line, job: id) }
-            }
-        }
-        proc.terminationHandler = { [weak self] p in
-            pipe.fileHandleForReading.readabilityHandler = nil
-            let code = p.terminationStatus
-            Task { @MainActor in self?.finished(code: code, job: id) }
-        }
+        let output = OutputPump()
 
         tracker = job.playlist == nil && job.only == nil
             ? PlaylistTracker()
             : PlaylistTracker(retrying: job.only, keeping: job.playlist)
         wasCancelled = false
-        lastErrorLine = nil
+        errorLog = ErrorLog()
+        cookiePrefix = job.needsCookies ? (browser.map { "\($0.displayName) sign-in · " } ?? "") : ""
         jobs[i].state = .running
         jobs[i].detail = nil
+        jobs[i].suggestsSignInSetting = false
+        jobs[i].suggestsFullDiskAccess = false
         runningID = id
         process = proc
-        status = "Starting download…"
+        status = queuePrefix() + (startNotes.removeValue(forKey: id) ?? "Starting download…")
 
         do {
             try proc.run()
         } catch {
             process = nil
             runningID = nil
-            stop("Could not start yt‑dlp: \(error.localizedDescription)")
+            RunDirectory.remove(runDirectory)
+            runDirectory = nil
+            stop("Couldn't start yt‑dlp. \(error.localizedDescription)")
+            return
+        }
+        // our copy of the write end must close, or the reader never sees the end of the output
+        try? pipe.fileHandleForWriting.close()
+        output.start(reading: pipe.fileHandleForReading, process: proc)
+        // one consumer handles every line and then the exit, in order, so the last ERROR line is never lost
+        Task { @MainActor [weak self] in
+            for await event in output.events {
+                switch event {
+                case .line(let line): self?.handle(line: line, job: id)
+                case .exit(let code): self?.finished(code: code, job: id)
+                }
+            }
         }
     }
 
@@ -400,36 +526,11 @@ final class DownloadManager: ObservableObject {
         UserDefaults.standard.string(forKey: tool.defaultsKey) ?? tool.defaultPath
     }
 
-    // MARK: Arguments
-    nonisolated static func formatArguments(for o: JobOptions) -> [String] {
-        func abr(_ quality: String) -> Int? { Int(quality.replacingOccurrences(of: "k", with: "")) }
-        let audioFilter = abr(o.audioQuality).map { "bestaudio[abr<=\($0)][vcodec=none]" } ?? "bestaudio"
-
-        switch o.type {
-        case .audio:
-            var args = ["-f", audioFilter]
-            if o.audioFormat != "source" {  // transcode only if asked
-                args += ["--extract-audio", "--audio-format", o.audioFormat]
-                if let rate = abr(o.audioQuality), rate <= 160 {
-                    args += ["--audio-quality", o.audioQuality]
-                }
-            }
-            return args
-        case .video:
-            return ["-f", "bestvideo[height<=\(o.resolution)][acodec=none]", "--remux-video", o.container]
-        case .both:
-            return [
-                "-f", "bestvideo[height<=\(o.resolution)]+\(audioFilter)",
-                "--merge-output-format", o.container,
-            ]
-        }
-    }
-
     // MARK: Output
     private func handle(line raw: String, job id: UUID) {
         guard id == runningID, let i = jobs.firstIndex(where: { $0.id == id }) else { return }
         let line = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        if line.hasPrefix("ERROR") { lastErrorLine = line }
+        errorLog.consume(line)
 
         tracker.consume(line)
         if tracker.progress != jobs[i].playlist { jobs[i].playlist = tracker.progress }
@@ -475,9 +576,10 @@ final class DownloadManager: ObservableObject {
     }
 
     /// "Link 2 of 5 · " when several links are queued.
+    /// Also says "Safari sign-in · " while the running job borrows a browser's cookies.
     private func queuePrefix() -> String {
-        guard jobs.count > 1, let running = jobs.firstIndex(where: { $0.id == runningID }) else { return "" }
-        return "Link \(running + 1) of \(jobs.count) · "
+        guard let running = jobs.firstIndex(where: { $0.id == runningID }) else { return "" }
+        return (jobs.count > 1 ? "Link \(running + 1) of \(jobs.count) · " : "") + cookiePrefix
     }
 
     private func finished(code: Int32, job id: UUID) {
@@ -491,6 +593,8 @@ final class DownloadManager: ObservableObject {
             .split(whereSeparator: \.isNewline).map { URL(fileURLWithPath: String($0)) } ?? []
         if let pathFile { try? FileManager.default.removeItem(at: pathFile) }
         pathFile = nil
+        RunDirectory.remove(runDirectory)
+        runDirectory = nil
 
         guard let i = jobs.firstIndex(where: { $0.id == id }) else {
             pump()
@@ -500,38 +604,70 @@ final class DownloadManager: ObservableObject {
         jobs[i].files += files
         jobs[i].speed = nil
 
-        if wasCancelled {
+        let failedRun = code != 0 || !(jobs[i].playlist?.failed.isEmpty ?? true)
+        let currentBrowser = CookieBrowser.current()
+        let usedCookies = jobs[i].needsCookies
+        // a sign-in ERROR in the run triggers the cookie retry (see requiresSignIn); the hint agrees with it
+        let signInSeen = failedRun && ErrorHint.requiresSignIn(errorLog)
+        let hint = failedRun
+            ? ErrorHint.forFailedRun(errorLog, cookiesBrowser: currentBrowser, usedCookies: usedCookies)
+                .map { $0.resolvingMissingBrowser(cookiesEnabled: UserDefaults.standard.bool(forKey: "cookiesEnabled")) }
+            : nil
+        let lastErrorReason = errorLog.lastError.map { PlaylistTracker.reason(from: $0) }
+        let failedItems = jobs[i].playlist?.failed ?? []
+        let action = QueueLogic.nextAction(
+            FinishFacts(
+                wasCancelled: wasCancelled, exitCode: code, isPlaylist: jobs[i].playlist != nil,
+                failedItems: failedItems.count,
+                allFailuresTransient: failedItems.allSatisfy { DownloadJob.isTransient($0.detail) },
+                signInSeen: signInSeen, cookieBrowserAvailable: currentBrowser != nil,
+                needsCookies: usedCookies, autoRetried: jobs[i].autoRetried,
+                lastErrorTransient: DownloadJob.isTransient(lastErrorReason)))
+        switch action {
+        case .cancelled:
             jobs[i].state = .cancelled
-        } else if let playlist = jobs[i].playlist, !jobs[i].autoRetried,
-            !playlist.failed.isEmpty, playlist.failed.allSatisfy({ DownloadJob.isTransient($0.detail) })
-        {
+        case .retryWithCookies:
+            // a sign-in wall and the person opted in: run this job once more with their browser's cookies
+            jobs[i].needsCookies = true
+            if !failedItems.isEmpty { jobs[i].only = failedItems.map(\.id) }
+            jobs[i].state = .queued
+            let name = currentBrowser?.displayName ?? "browser"
+            startNotes[id] = "Retrying…"  // the row's status then reads "\(name) sign-in · Retrying…"
+            status = "Signing in with \(name)…"
+        case .retryPlaylistFailures:
             // a network hiccup: try just the failed videos once more
             jobs[i].autoRetried = true
-            jobs[i].only = playlist.failed.map(\.id)
+            jobs[i].only = failedItems.map(\.id)
             jobs[i].state = .queued
-            status = "Retrying \(playlist.failed.count) that hit a network error…"
-        } else if jobs[i].playlist == nil, code != 0, !jobs[i].autoRetried,
-            DownloadJob.isTransient(lastErrorLine.map { PlaylistTracker.reason(from: $0) })
-        {
+            startNotes[id] = "Retrying \(failedItems.count) that hit a network error…"
+            status = "Retrying \(failedItems.count) that hit a network error…"
+        case .retrySingle:
             jobs[i].autoRetried = true
             jobs[i].state = .queued
+            startNotes[id] = "Retrying after a network error…"
             status = "Retrying after a network error…"
-        } else if let playlist = jobs[i].playlist {
-            if playlist.failed.isEmpty && code == 0 {
-                jobs[i].state = .done
-                completions += 1
-            } else {
+        case .playlistDone:
+            jobs[i].state = .done
+            completions += 1
+        case .playlistFailed:
+            if let playlist = jobs[i].playlist {
                 jobs[i].state = .failed
-                jobs[i].detail = "\(playlist.doneCount) of \(playlist.total) downloaded"
+                jobs[i].detail = "\(playlist.doneCount) of \(playlist.total) downloaded."
+                    + (hint.map { " " + $0.message } ?? "")
+                jobs[i].suggestsSignInSetting = hint?.needsSignInSetting ?? false
+                jobs[i].suggestsFullDiskAccess = hint?.needsFullDiskAccess ?? false
                 hadError = true
             }
-        } else if code == 0 {
+        case .done:
             jobs[i].state = .done
             jobs[i].fraction = 1
             completions += 1
-        } else {
+        case .failed:
             jobs[i].state = .failed
-            jobs[i].detail = lastErrorLine.map { PlaylistTracker.reason(from: $0) } ?? "Failed (code \(code))"
+            jobs[i].detail =
+                hint?.message ?? lastErrorReason ?? "Failed (code \(code))"
+            jobs[i].suggestsSignInSetting = hint?.needsSignInSetting ?? false
+            jobs[i].suggestsFullDiskAccess = hint?.needsFullDiskAccess ?? false
             hadError = true
         }
         let stopped = stopQueue && wasCancelled
@@ -552,7 +688,7 @@ final class DownloadManager: ObservableObject {
             status = "Download cancelled."
         } else if jobs.contains(where: { $0.state == .failed }) {
             if jobs.count == 1, !jobs[0].isPlaylist {
-                status = "Download failed.\n" + (jobs[0].detail ?? "")
+                status = "Download failed. " + (jobs[0].detail ?? "")
             } else {
                 let failed = max(s.failedUnits, jobs.filter { $0.state == .failed }.count)
                 status = "\(s.doneUnits) of \(s.units) downloaded · \(failed) failed"
@@ -592,18 +728,5 @@ final class DownloadManager: ObservableObject {
         guard let r = line.range(of: marker) else { return nil }
         let rest = line[r.upperBound...].trimmingCharacters(in: .whitespaces)
         return rest.split(separator: " ").first.map(String.init)
-    }
-}
-
-/// Collects pipe output and hands back only complete lines (yt-dlp separates
-/// progress updates with \r or \n). Used from one readability handler at a time.
-private final class LineBuffer: @unchecked Sendable {
-    private var pending = ""
-
-    func append(_ chunk: String) -> [String] {
-        pending += chunk
-        var parts = pending.components(separatedBy: CharacterSet(charactersIn: "\r\n"))
-        pending = parts.removeLast()
-        return parts.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
     }
 }

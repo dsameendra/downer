@@ -25,15 +25,16 @@ Lives in the menu bar and a global shortcut, and shares one set of remembered de
 ## Operating Context
 
 - Main window is 460 pt wide with a fixed 640 pt of content below a taller, toolbar-height title bar; closing it hides it and the Dock icon.
-- Menu bar popover is 360x180 and shares settings and the queue with the main window. The global shortcut opens it and fills in a copied link.
-- Settings window (400 wide): appearance (theme, background glow), global shortcut, and requirements (yt-dlp, ffmpeg, ffprobe) with install.
-- Status is a single line (Idle, Checking link…, Downloading 42% · speed · time left, completed, errors). Real progress is parsed from yt-dlp output: per video, per playlist and across the whole queue.
+- Menu bar popover is 360x196 (room for a two-line status) and shares settings and the queue with the main window. The global shortcut opens it and fills in a copied link.
+- Settings window (400 wide): Appearance (theme, background glow, haptics), Global Shortcut, Sign-in (browser cookies; opt-in, off by default, consent screen first), Requirements (yt-dlp, ffmpeg, ffprobe, recommended deno) with install and update, Updates (Sparkle), and Advanced (extra yt-dlp arguments, common options only).
+- Status is one line that wraps to two when a message is longer (Idle, Checking link…, Downloading 42% · speed · time left, completed, errors). Real progress is parsed from yt-dlp output: per video, per playlist and across the whole queue.
 
 ## Capabilities and Constraints
 
 - Download types: Video + Audio, Audio only, Video only.
-- A queue: any number of links, added at any time, run one at a time in order. Each link keeps the settings it had when added. Playlists expand into one row per video with retry for failures. Network errors retry once automatically.
-- Video: resolution, container. Audio: quality (source, up to N kbps), format (source, MP3, AAC/M4A, Opus).
+- A queue: any number of links, added at any time, run one at a time in order. Each link keeps the settings it had when added. Playlists expand into one row per video with retry for failures. Network errors (including HTTP 503) retry once automatically. Cancelling a link that is still being looked up stops the look-up.
+- Video: resolution, container (MP4, MKV, WebM, MOV), and Best Compatibility (H.264 + AAC in MP4). Audio: quality (source, up to N kbps), format (source, MP3, AAC/M4A, Opus).
+- Browser sign-in is opt-in and used only when a site requires it; Downer never stores cookies. Downer updates itself through Sparkle, waiting for downloads to finish.
 - Persistent defaults via AppStorage; all existing behavior and copy stay.
 - Dark and light mode both required.
 

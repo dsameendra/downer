@@ -16,20 +16,21 @@ Liquid Glass redesign of Downer, approved from the "Downer Liquid Glass" design 
 - Title bar (`DownerWindowChrome`, `TitleBarRow`): no system title text. An empty unified toolbar gives the taller bar; the traffic lights, a centred semibold 13 pt title, and the trailing control all share one centre line 26 pt from the top, with a 20 pt inset on both sides. Content is laid out below the bar; only the title row reaches up into it. Main and Settings windows share this.
 
 ## Surfaces
-- Main window 460×700: URL capsule, type selector, Video / Audio groups, Save to, Information, floating dock (Download, progress, status).
-- Menu bar popover 360×180: system-drawn background, URL field with Paste, Download, status.
-- Settings 400×560: Appearance (theme, glow), Global Shortcut, Requirements (yt-dlp, ffmpeg, ffprobe with Install).
+- Main window 460×700: URL capsule, type selector, Video / Audio groups (the Video group has a Best Compatibility row under the pickers, which locks the container to MP4), Save to, Information (an entry for each option, including Best Compatibility), floating dock (Download, progress, status).
+- Menu bar popover 360×196: system-drawn background, URL field with Paste, Download, and a status line that wraps to two lines.
+- Settings 400×560, scrolling: Appearance (theme, glow, haptics), Global Shortcut, Sign-in (browser cookies; switching on opens a consent sheet; for Safari a Full Disk Access status row), Requirements (yt-dlp, ffmpeg, ffprobe, deno with Install / Update), Updates (automatic check, Check now), Advanced (extra yt-dlp arguments).
 - Download queue: links (single videos, playlists, or both) can be added at any time, one after another, by pasting into the field and pressing Return or "Add to Queue". They are looked up first (titles, playlist or not) and downloaded one at a time in order. Each job keeps the settings it was added with. Failed network downloads retry once on their own.
 - Queue tray: shown when more than one link is queued or a playlist is downloading. The dock becomes a tray with a drag handle (peek 162, list 452, full 604 pt). Peek shows title, ring, overall bar and current item; pulled up shows every item with its state and Retry for failures. A lone single video keeps the dock.
 - Menu bar icon (`MenuBarIcon.swift`): the app icon's double chevron as a template image; a progress ring while downloading (percentage, or item/total for playlists), a check for two seconds when done, an orange dot when a tool is missing or a run failed.
 - App icon: layered `Downer.icon` (gradient plate, two glass chevron layers), Default / Dark / Clear / Tinted.
 
 ## Do not
-Progress percentages (the app does not parse them), gradient text, extra glass on content rows, decorative blur.
+Gradient text, extra glass on content rows, decorative blur.
 
 ## Implementation notes
 - Motion: one language in `Motion` (smooth 0.3 s, quick 0.2 s, never bouncy). Every animation has a Reduce Motion path that keeps a brief fade.
 - The progress bar is custom (`DownerProgressBar`) because the system linear style ignores the brand tint in dark mode.
 - Tinted Liquid Glass renders grey inside an `NSPopover`, so the popover's Download button is solid red (`flat`).
 - Gestures: a two-finger swipe is a scroll event, so `TrackpadScroll.swift` reads it directly. Content follows the fingers 1:1 with no animation, then `SpringDriver` settles it with the swipe's velocity (critically damped, no bounce, interruptible). The maths lives in `GestureModels.swift` and is tested by `scripts/test-gestures.sh`. Tune feel in `Motion`.
+- Status and error text is short and wraps (the dock and popover allow two lines) instead of clipping.
 - The dock and the tray are one glass panel whose height changes; their contents cross-fade.
