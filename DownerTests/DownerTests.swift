@@ -19,7 +19,7 @@ struct YtDlpArgumentsTests {
             cookiesBrowser: cookies, extraArguments: extra)
     }
 
-    let probeFlags = ["--flat-playlist", "--no-warnings", "--print", "%(playlist_title|)s\t%(title)s"]
+    let probeFlags = ["--flat-playlist", "--lazy-playlist", "--no-warnings", "--print", "%(playlist_title|)s\t%(title)s"]
     let link = "https://example.com/v"
     /// Downer's own cookie flags with Sign-in off: they cancel any cookie setting from a yt-dlp config file.
     let cookiesOff = ["--no-cookies", "--no-cookies-from-browser"]

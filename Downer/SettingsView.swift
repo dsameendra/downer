@@ -17,6 +17,7 @@ struct SettingsView: View {
     // browser sign-in: off unless the consent sheet's "Turn on" sets it
     @AppStorage("cookiesEnabled") private var cookiesEnabled = false
     @AppStorage("cookiesBrowser") private var cookiesBrowserRaw = ""
+    @AppStorage(PlaylistLinkChoice.storageKey) private var playlistChoiceRaw = PlaylistLinkChoice.ask.rawValue
     @State private var consent: ConsentMode?
     @ObservedObject private var deps = DependencyManager.shared
     @ObservedObject private var updates = UpdateChecker.shared
@@ -35,10 +36,11 @@ struct SettingsView: View {
                 VStack(spacing: 14) {
                     appearanceGroup.appear(0)
                     shortcutGroup.appear(1)
-                    signInGroup.appear(2)
-                    requirementsGroup.appear(3)
-                    updatesGroup.appear(4)
-                    advancedGroup.appear(5)
+                    downloadsGroup.appear(2)
+                    signInGroup.appear(3)
+                    requirementsGroup.appear(4)
+                    updatesGroup.appear(5)
+                    advancedGroup.appear(6)
                 }
                 .padding(16)
                 .padding(.top, -4)
@@ -128,6 +130,31 @@ struct SettingsView: View {
             .padding(.leading, 14)
             .padding(.trailing, 8)
             .frame(height: 46)
+        }
+    }
+
+    /// What a link to a video inside a playlist does. Queued links keep the choice they were added with.
+    private var downloadsGroup: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            OptionGroup(title: "Downloads") {
+                OptionRow(
+                    title: "Video in a playlist",
+                    options: PlaylistLinkChoice.allCases.map(\.title),
+                    selection: Binding(
+                        get: { (PlaylistLinkChoice(rawValue: playlistChoiceRaw) ?? .ask).title },
+                        set: { title in
+                            if let choice = PlaylistLinkChoice.allCases.first(where: { $0.title == title }) {
+                                playlistChoiceRaw = choice.rawValue
+                            }
+                        }),
+                    showsDivider: false)
+                    .help("For links like youtube.com/watch?v=…&list=…")
+            }
+            Text("For links to a video playing inside a playlist (watch?v=…&list=…). Links to a playlist page always download the playlist. Downer always asks before downloading a whole YouTube Mix, and confirms playlists of \(QueueLogic.largePlaylist) or more videos.")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 14)
         }
     }
 

@@ -30,6 +30,12 @@ struct QueueTray: View {
     var isTray = true
     /// The dock's contents (its own padding included), shown while `isTray` is false.
     var dock: AnyView = AnyView(EmptyView())
+    /// Answers for links waiting on "just the video or the whole list?" and on large playlists.
+    var onChoose: (UUID, PlaylistScope) -> Void = { _, _ in }
+    var onChooseAll: (PlaylistScope) -> Void = { _ in }
+    var onConfirmSize: (UUID) -> Void = { _ in }
+    /// Queues the other choice (the whole list after just the video, or the reverse).
+    var onOtherChoice: (UUID) -> Void = { _ in }
 
     private static let peek: CGFloat = 162
     private static let list: CGFloat = 452
@@ -57,6 +63,12 @@ struct QueueTray: View {
     private var active: Bool { summary.isActive }
     private var running: DownloadJob? { jobs.first { $0.state == .running } }
     private var failedJobs: Int { jobs.filter { $0.state == .failed }.count }
+    /// Links waiting for any answer; the queue is not finished while there are some.
+    private var waiting: Int { jobs.filter { $0.state == .needsChoice }.count }
+    /// Links waiting on "video or list?"; with two or more, the footer offers one answer for all.
+    private var scopeQuestions: Int {
+        jobs.filter { if case .scope = $0.question { return $0.state == .needsChoice } else { return false } }.count
+    }
 
     /// 0…1 between the peeking and list heights; drives the cross-fade of content.
     private var reveal: CGFloat {
@@ -102,6 +114,10 @@ struct QueueTray: View {
         .onAppear {
             driver.onUpdate = { height = $0 }
             height = isTray ? (startsOpen ? Self.list : Self.peek) : dockHeight
+        }
+        .onChange(of: waiting) { old, new in
+            // several links need an answer (no card is shown then): open the list so their buttons can be seen
+            if new > old, new >= 2, isTray, height < Self.list - 1 { animate(to: Self.list) }
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Download queue")
@@ -249,14 +265,25 @@ struct QueueTray: View {
             id: "remove", title: job.state == .running ? "Cancel" : (job.isFinished ? "Clear" : "Remove"),
             systemImage: job.state == .running ? "xmark" : "trash", tint: .red,
             handler: { onRemove(job.id) })
+        // a video-in-a-list link that was decided can queue the other choice
+        var other: [SwipeAction] = []
+        if job.kind.isVideoInList, let scope = job.scope {
+            let list = job.kind.listName
+            other = [SwipeAction(
+                id: "other", title: scope == .video ? "Whole \(list)" : "Just Video",
+                systemImage: scope == .video ? "music.note.list" : "play.rectangle", tint: .purple,
+                handler: { onOtherChoice(job.id) })]
+        }
         switch job.state {
-        case .queued, .running:
+        case .needsChoice:
             return [remove]
+        case .queued, .running:
+            return other + [remove]
         case .failed, .cancelled:
-            return [SwipeAction(id: "retry", title: "Retry", systemImage: "arrow.clockwise", tint: .orange,
+            return other + [SwipeAction(id: "retry", title: "Retry", systemImage: "arrow.clockwise", tint: .orange,
                                 handler: { onRetry(job.id) }), remove]
         case .done:
-            return [SwipeAction(id: "reveal", title: "Show", systemImage: "folder", tint: .blue,
+            return other + [SwipeAction(id: "reveal", title: "Show", systemImage: "folder", tint: .blue,
                                 handler: { onRevealJob(job.id) }), remove]
         }
     }
@@ -280,10 +307,14 @@ struct QueueTray: View {
                                     onOpenChange: setOpen,
                                     onToggle: { toggleCollapse(job.id) },
                                     onRemove: { onRemove(job.id) },
-                                    onRetry: { onRetry(job.id) })
+                                    onRetry: { onRetry(job.id) },
+                                    onChoose: { onChoose(job.id, $0) },
+                                    onConfirmSize: { onConfirmSize(job.id) })
                             } else {
                                 SwipeActionsRow(actions: swipeActions(for: job), isOpen: open, onOpenChange: setOpen) {
-                                    JobRow(job: job, onRemove: { onRemove(job.id) }, onRetry: { onRetry(job.id) })
+                                    JobRow(
+                                        job: job, onRemove: { onRemove(job.id) }, onRetry: { onRetry(job.id) },
+                                        onChoose: { onChoose(job.id, $0) }, onConfirmSize: { onConfirmSize(job.id) })
                                 }
                             }
                         }
@@ -345,6 +376,33 @@ struct QueueTray: View {
     }
 
     private var footer: some View {
+        VStack(spacing: 8) {
+            if scopeQuestions >= 2 { chooseAllBar }
+            footerButtons
+        }
+        .padding(.top, 10)
+        .allowsHitTesting(reveal > 0.6)
+        .motion(value: active)
+        .motion(value: scopeQuestions >= 2)
+    }
+
+    /// One answer for every link waiting on "video or list?".
+    private var chooseAllBar: some View {
+        HStack(spacing: 6) {
+            Text("\(scopeQuestions) links need a choice")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 4)
+            Button("All: Just Videos") { onChooseAll(.video) }
+                .buttonStyle(PrimaryPillButtonStyle())
+            Button("All: Whole Lists") { onChooseAll(.playlist) }
+                .buttonStyle(PillButtonStyle())
+        }
+        .padding(.horizontal, 4)
+        .transition(.opacity)
+    }
+
+    private var footerButtons: some View {
         HStack(spacing: 10) {
             if active {
                 Button("Cancel All", action: onCancelAll)
@@ -362,9 +420,6 @@ struct QueueTray: View {
                 }
             }
         }
-        .padding(.top, 10)
-        .allowsHitTesting(reveal > 0.6)
-        .motion(value: active)
     }
 
     // MARK: Text
@@ -388,6 +443,7 @@ struct QueueTray: View {
             if let position = s.currentPosition { return "Download \(position) of \(s.units)" }
             return "Checking links…"
         }
+        if waiting > 0 { return waiting == 1 ? "1 link is waiting for you" : "\(waiting) links are waiting for you" }
         let failed = max(s.failedUnits, failedJobs)
         if jobs.allSatisfy({ $0.state == .cancelled }) { return "Cancelled" }
         return failed == 0 ? "All \(s.units) downloaded" : "\(failed) failed"
@@ -408,12 +464,12 @@ struct QueueTray: View {
     }
 
     private var tint: Color {
-        if active { return Brand.red }
+        if active || waiting > 0 { return Brand.red }
         return max(summary.failedUnits, failedJobs) == 0 ? .green : .orange
     }
 
     private var dotColor: Color {
-        active ? .orange : (max(summary.failedUnits, failedJobs) == 0 ? .green : .orange)
+        active || waiting > 0 ? .orange : (max(summary.failedUnits, failedJobs) == 0 ? .green : .orange)
     }
 
     // MARK: Scrolling
@@ -597,6 +653,8 @@ private struct JobRow: View {
     let job: DownloadJob
     let onRemove: () -> Void
     let onRetry: () -> Void
+    var onChoose: (PlaylistScope) -> Void = { _ in }
+    var onConfirmSize: () -> Void = {}
 
     var body: some View {
         HStack(spacing: 12) {
@@ -636,6 +694,11 @@ private struct JobRow: View {
             RemoveButton(label: "Cancel", action: onRemove)
         case .queued:
             RemoveButton(label: "Remove from queue", action: onRemove)
+        case .needsChoice:
+            if let question = job.question {
+                ChoiceRowButtons(question: question, onChoose: onChoose, onConfirmSize: onConfirmSize)
+            }
+            RemoveButton(label: "Remove from queue", action: onRemove)
         case .failed, .cancelled:
             Button("Retry", action: onRetry).buttonStyle(PillButtonStyle())
         case .done:
@@ -644,11 +707,13 @@ private struct JobRow: View {
     }
 
     private var detail: String {
+        let from = job.fromList.map { " · from \($0)" } ?? ""
         switch job.state {
-        case .done: return "Downloaded"
+        case .done: return "Downloaded" + from
         case .running:
-            return job.speed.map { "Downloading · \($0)" } ?? "Downloading"
-        case .queued: return job.isResolving ? "Checking link…" : "Waiting"
+            return (job.speed.map { "Downloading · \($0)" } ?? "Downloading") + from
+        case .queued: return (job.isResolving ? "Checking link…" : "Waiting") + from
+        case .needsChoice: return "Choose what to download"
         case .failed: return job.detail ?? "Failed"
         case .cancelled: return "Cancelled"
         }
@@ -665,6 +730,8 @@ private struct PlaylistSection: View {
     let onToggle: () -> Void
     let onRemove: () -> Void
     let onRetry: () -> Void
+    var onChoose: (PlaylistScope) -> Void = { _ in }
+    var onConfirmSize: () -> Void = {}
 
     var body: some View {
         VStack(spacing: 0) {
@@ -686,7 +753,12 @@ private struct PlaylistSection: View {
                             .contentTransition(.numericText())
                     }
                     Spacer(minLength: 8)
-                    if job.state == .queued { RemoveButton(label: "Remove from queue", action: onRemove) }
+                    if job.state == .needsChoice, let question = job.question {
+                        ChoiceRowButtons(question: question, onChoose: onChoose, onConfirmSize: onConfirmSize)
+                    }
+                    if job.state == .queued || job.state == .needsChoice {
+                        RemoveButton(label: "Remove from queue", action: onRemove)
+                    }
                     if job.state == .failed || job.state == .cancelled {
                         Button("Retry", action: onRetry).buttonStyle(PillButtonStyle())
                     }
@@ -723,6 +795,11 @@ private struct PlaylistSection: View {
         case .running:
             return playlist.current.map { "Playlist · item \($0) of \(playlist.total)" } ?? "Playlist"
         case .queued: return "Playlist · \(playlist.total) videos · waiting"
+        case .needsChoice:
+            if case .size(let count, let atLeast) = job.question {
+                return "Playlist · \(count)\(atLeast ? "+" : "") videos · download all?"
+            }
+            return "Playlist · waiting for you"
         case .cancelled: return "Playlist · cancelled"
         default:
             let failed = playlist.failed.count
@@ -813,6 +890,10 @@ private struct StateIcon: View {
             Circle()
                 .strokeBorder(Color.secondary.opacity(0.6), style: StrokeStyle(lineWidth: 1.6, dash: [3, 3]))
                 .frame(width: 20, height: 20)
+        case .needsChoice:
+            Image(systemName: "questionmark.circle.fill")
+                .font(.system(size: 22))
+                .foregroundStyle(Brand.red)
         case .failed:
             Image(systemName: "exclamationmark.circle.fill")
                 .font(.system(size: 22))

@@ -252,6 +252,9 @@ enum ExtraArguments {
             return .init(reason: "\(shown) \(noRun)")
         }
         if output.contains(name) { return .init(reason: "\(shown) \(managed)") }
+        if name == "--no-playlist" || name == "--yes-playlist" {
+            return .init(reason: "\(shown): choose this in Settings → Downloads (Video in a playlist)")
+        }
         return .init(reason: "Not supported in Downer: \(shown). \(generic)")
     }
 

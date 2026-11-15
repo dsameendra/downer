@@ -134,16 +134,53 @@ struct MainAppView: View {
                     expansion: $trayExpansion,
                     startsOpen: DownloadManager.previewTrayOpen,
                     isTray: dl.needsTray,
-                    dock: AnyView(dockContent)
+                    dock: AnyView(dockContent),
+                    onChoose: { dl.choose($0, scope: $1) },
+                    onChooseAll: { dl.chooseAll($0) },
+                    onConfirmSize: { dl.confirmSize($0) },
+                    onOtherChoice: { dl.addOtherChoice(of: $0) }
                 )
             }
             .padding(14)
             .onChange(of: dl.needsTray) { _, needs in
                 if !needs { trayExpansion = 0 }
             }
+
+            // one link waiting for an answer: ask right here (several wait in the queue with their own buttons)
+            if let job = singleChoice {
+                Color.black.opacity(0.25)
+                    .ignoresSafeArea()
+                    .onTapGesture {}  // the question comes first
+                    .transition(.opacity)
+                VStack {
+                    Spacer()
+                    PlaylistChoiceCard(
+                        job: job,
+                        onChoose: { scope, remember in
+                            withAnimation(Motion.standard(reduce: reduceMotion)) {
+                                dl.choose(job.id, scope: scope, remember: remember)
+                            }
+                        },
+                        onConfirmSize: {
+                            withAnimation(Motion.standard(reduce: reduceMotion)) { dl.confirmSize(job.id) }
+                        },
+                        onCancel: { cancelChoice(job) }
+                    )
+                    .downerDockGlass()
+                    .padding(14)
+                }
+                .id(job.id)
+                .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+                .onAppear {
+                    // a "video or list?" card answers the link just submitted, so Return and Esc go to it;
+                    // a size question can arrive later and must not interrupt typing
+                    if case .scope = job.question { urlFocused = false }
+                }
+            }
         }
         // 460 × 640 below the title bar; the window adds the title bar's own height
         .frame(width: 460, height: 640)
+        .animation(Motion.standard(reduce: reduceMotion), value: singleChoice?.id)
         .linkDrop { dl.add($0) }
         .tint(Brand.red)
         .onChange(of: downloadType.wrappedValue) { oldType, newType in
@@ -402,6 +439,12 @@ struct MainAppView: View {
                             "Saves H.264 video with AAC audio in MP4, which plays in QuickTime, on iPhone and iPad, and almost everywhere. Files are larger, and most YouTube videos offer H.264 only up to 1080p."
                     )
                     InfoRow(
+                        icon: "music.note.list",
+                        title: "Videos in a playlist",
+                        description:
+                            "A link to a video playing inside a playlist or Mix asks whether you want just the video or the whole list. Set a default in Settings → Downloads. Playlists of \(QueueLogic.largePlaylist) or more videos are confirmed first."
+                    )
+                    InfoRow(
                         icon: "music.note",
                         title: "Audio format and quality",
                         description:
@@ -425,6 +468,19 @@ struct MainAppView: View {
                 .downerSurface()
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
+        }
+    }
+
+    /// The link to ask about in the card: only when exactly one is waiting.
+    private var singleChoice: DownloadJob? {
+        let waiting = dl.pendingChoices
+        return waiting.count == 1 ? waiting[0] : nil
+    }
+
+    /// Cancel removes the link; one that was asked about before its look-up goes back in the field.
+    private func cancelChoice(_ job: DownloadJob) {
+        withAnimation(Motion.standard(reduce: reduceMotion)) {
+            if let link = dl.cancelChoice(job.id), videoURL.isEmpty { videoURL = link }
         }
     }
 
@@ -458,7 +514,7 @@ struct MainAppView: View {
                 .motion(Motion.quick, value: addsToQueue)
             }
             .buttonStyle(DownloadButtonStyle(isCancel: cancels))
-            .keyboardShortcut(cancels ? nil : .defaultAction)
+            .keyboardShortcut(cancels || dl.needsChoice ? nil : .defaultAction)
             .disabled(videoURL.isEmpty && !dl.isActive)
 
             if dl.isActive {
