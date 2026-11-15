@@ -2,6 +2,16 @@
 
 Downloads and full notes for every version are on the [Releases](https://github.com/dsameendra/Downer/releases) page.
 
+## 2.2.0
+
+- **Video or playlist?** A YouTube link to a video playing inside a playlist or Mix (`watch?v=…&list=…`) asks whether
+  you want just the video or the whole list, instead of downloading the whole list (#18). Set a default in
+  **Settings → Downloads**.
+- **Mixes are never downloaded whole without asking**, and **playlists of 200 or more videos** are confirmed first.
+- A long playlist whose look-up runs out of time keeps the titles it found.
+
+Details: [`docs/release-notes/2.2.0.md`](docs/release-notes/2.2.0.md).
+
 ## 2.1.0
 
 - **Sign in for videos that need it.** Optional and off by default, with a consent screen first. Downer always tries
