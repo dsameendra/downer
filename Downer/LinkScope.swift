@@ -36,6 +36,22 @@ enum PlaylistLinkChoice: String, CaseIterable, Identifiable {
         }
     }
 
+    /// What happens with this choice, in the words Settings shows under the picker.
+    var explanation: String {
+        switch self {
+        case .ask:
+            return "When a link opens a video inside a playlist, Downer asks whether you want just that video or the whole playlist."
+        case .video:
+            return "Downer downloads only the video in the link, even when it's playing inside a playlist."
+        case .playlist:
+            return "Downer downloads every video in the playlist the link comes from."
+        }
+    }
+
+    /// The rules that hold whatever the choice.
+    static let safetyNote =
+        "Downer never downloads a whole YouTube Mix without asking, and checks with you before playlists of \(QueueLogic.largePlaylist) or more videos."
+
     static func current(_ defaults: UserDefaults = .standard) -> PlaylistLinkChoice {
         PlaylistLinkChoice(rawValue: defaults.string(forKey: storageKey) ?? "") ?? .ask
     }

@@ -150,11 +150,17 @@ struct SettingsView: View {
                     showsDivider: false)
                     .help("For links like youtube.com/watch?v=…&list=…")
             }
-            Text("For links to a video playing inside a playlist (watch?v=…&list=…). Links to a playlist page always download the playlist. Downer always asks before downloading a whole YouTube Mix, and confirms playlists of \(QueueLogic.largePlaylist) or more videos.")
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, 14)
+            VStack(alignment: .leading, spacing: 4) {
+                // follows the picker, so it always says what the current choice does
+                Text((PlaylistLinkChoice(rawValue: playlistChoiceRaw) ?? .ask).explanation)
+                    .contentTransition(.opacity)
+                    .motion(Motion.quick, value: playlistChoiceRaw)
+                Text(PlaylistLinkChoice.safetyNote)
+            }
+            .font(.system(size: 12))
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 14)
         }
     }
 

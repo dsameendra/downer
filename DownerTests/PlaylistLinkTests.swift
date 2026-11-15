@@ -339,3 +339,12 @@ struct PlaylistQueueFlowTests {
         #expect(dl.status == "Idle")
     }
 }
+
+struct PlaylistSettingTextTests {
+    @Test func everyChoiceExplainsItself() {
+        let texts = PlaylistLinkChoice.allCases.map(\.explanation)
+        #expect(Set(texts).count == PlaylistLinkChoice.allCases.count)
+        #expect(texts.allSatisfy { !$0.isEmpty && !$0.contains("?v=") })
+        #expect(PlaylistLinkChoice.safetyNote.contains("\(QueueLogic.largePlaylist)"))
+    }
+}
