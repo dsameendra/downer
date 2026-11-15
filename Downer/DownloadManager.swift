@@ -79,6 +79,11 @@ final class DownloadManager: ObservableObject {
     /// A queue tray is warranted: more than one link, or a playlist.
     var needsTray: Bool { jobs.count > 1 || jobs.first?.isPlaylist == true }
     var runningJob: DownloadJob? { jobs.first { $0.id == runningID } }
+    /// Links waiting for the person to choose (video or playlist, or a large playlist), in queue order.
+    var pendingChoices: [DownloadJob] { jobs.filter { $0.state == .needsChoice } }
+    var needsChoice: Bool { jobs.contains { $0.state == .needsChoice } }
+    /// Something is running, waiting to run, or waiting for an answer: the queue is not finished.
+    var hasPendingWork: Bool { isActive || needsChoice }
 
     /// 0…1 across the whole queue while it is active.
     var progress: Double? { isActive ? summary.overall : nil }
@@ -94,8 +99,9 @@ final class DownloadManager: ObservableObject {
 
     // MARK: Adding links
     /// Accepts one link or several separated by spaces or new lines. Returns how many were queued.
+    /// `setting`: Settings → Downloads (passed in by tests).
     @discardableResult
-    func add(_ text: String) -> Int {
+    func add(_ text: String, setting: PlaylistLinkChoice = .current()) -> Int {
         let links = Self.links(in: text)
         guard !links.isEmpty else {
             status = "Paste a link to a video or playlist."
@@ -111,17 +117,33 @@ final class DownloadManager: ObservableObject {
         }
 
         var added = 0
+        var asking = 0
         let options = JobOptions.current()
         for link in links {
-            if jobs.contains(where: { $0.url == link && !$0.isFinished }) { continue }
-            let job = DownloadJob(url: link, options: options)
+            var job = DownloadJob(url: link, options: options)
+            job.kind = LinkScope.classify(link)
+            switch QueueLogic.playlistDecision(for: job.kind, setting: setting) {
+            case .ask:
+                job.state = .needsChoice
+                job.question = Self.firstQuestion(for: job.kind)
+            case .go(let scope):
+                job.scope = scope
+            }
+            if QueueLogic.isDuplicate(url: link, scope: job.scope, in: jobs) { continue }
             jobs.append(job)
-            toResolve.append(job.id)
+            if job.state == .needsChoice {
+                asking += 1  // looked up only once the person has chosen
+            } else {
+                toResolve.append(job.id)
+            }
             added += 1
         }
         if added > 0 { stopQueue = false }  // new links after a Cancel All still run
         if added == 0 {
             status = "Already in the queue."
+        } else if asking == added {
+            status = "Choose what to download."
+            return added
         } else if isDownloading {
             status = added == 1 ? "Added to the queue." : "Added \(added) to the queue."
         } else {
@@ -141,6 +163,112 @@ final class DownloadManager: ObservableObject {
             }
     }
 
+    // MARK: Choosing
+    /// The question a link asks before it is looked up, if any: a video inside a list asks "video or
+    /// list?", and a link to a whole Mix asks before it downloads.
+    nonisolated static func firstQuestion(for kind: LinkKind) -> JobQuestion? {
+        switch kind {
+        case .videoInList(let isMix): return .scope(isMix: isMix)
+        case .mix: return .wholeMix
+        case .video, .playlist, .other: return nil
+        }
+    }
+
+    /// Answers "just the video or the whole list?" (or "the whole Mix?", always with `.playlist`) for a
+    /// link waiting on it. `remember` makes the answer the default in Settings → Downloads.
+    func choose(_ id: UUID, scope: PlaylistScope, remember: Bool = false) {
+        guard let i = jobs.firstIndex(where: { $0.id == id }), jobs[i].state == .needsChoice else { return }
+        switch jobs[i].question {
+        case .scope:
+            if remember {
+                UserDefaults.standard.set(
+                    (scope == .video ? PlaylistLinkChoice.video : .playlist).rawValue,
+                    forKey: PlaylistLinkChoice.storageKey)
+            }
+        case .wholeMix where scope == .playlist:
+            break
+        default:
+            return
+        }
+        if QueueLogic.isDuplicate(url: jobs[i].url, scope: scope, in: jobs, except: id) {
+            jobs.remove(at: i)
+            if jobs.isEmpty {
+                status = "Idle"
+            } else if runningID == nil, !hasPendingWork {
+                finishQueue()
+            } else {
+                status = "Already in the queue."
+            }
+            return
+        }
+        idleTask?.cancel()
+        // Choosing a whole Mix already accepts that it is long (its look-up rarely finishes in time),
+        // so it is not asked about again. A normal playlist can still be confirmed once its size is known.
+        if scope == .playlist, jobs[i].kind.isMix { jobs[i].sizeConfirmed = true }
+        jobs[i].scope = scope
+        jobs[i].question = nil
+        jobs[i].state = .queued
+        jobs[i].isResolving = true
+        stopQueue = false
+        toResolve.append(id)
+        if !isDownloading { status = "Checking link…" }
+        resolveNext()
+    }
+
+    /// The same answer for every link that is waiting on "video or list?".
+    func chooseAll(_ scope: PlaylistScope) {
+        for job in pendingChoices {
+            if case .scope = job.question { choose(job.id, scope: scope) }
+        }
+    }
+
+    /// Yes to a large playlist: download every video.
+    func confirmSize(_ id: UUID) {
+        guard let i = jobs.firstIndex(where: { $0.id == id }), jobs[i].state == .needsChoice,
+            case .size = jobs[i].question
+        else { return }
+        idleTask?.cancel()
+        jobs[i].question = nil
+        jobs[i].sizeConfirmed = true
+        jobs[i].state = .queued
+        stopQueue = false
+        pump()
+    }
+
+    /// Removes a link that is waiting for an answer. Returns the link when it was asked about before
+    /// being looked up, so the view can put it back in its field.
+    @discardableResult
+    func cancelChoice(_ id: UUID) -> String? {
+        guard let job = jobs.first(where: { $0.id == id }), job.state == .needsChoice else { return nil }
+        remove(id)
+        if case .size = job.question { return nil }
+        return job.url
+    }
+
+    /// Queues the other choice for a video-in-a-list link: the whole list after just the video, or the
+    /// other way round, so a wrong pick never means pasting the link again.
+    func addOtherChoice(of id: UUID) {
+        guard let job = jobs.first(where: { $0.id == id }), job.kind.isVideoInList, let scope = job.scope?.other
+        else { return }
+        guard !QueueLogic.isDuplicate(url: job.url, scope: scope, in: jobs) else {
+            status = "Already in the queue."
+            return
+        }
+        if !isActive {
+            jobs.removeAll { $0.isFinished && $0.id != id }
+            hadError = jobs.contains { $0.state == .failed }
+        }
+        var other = DownloadJob(url: job.url, options: JobOptions.current())
+        other.kind = job.kind
+        other.scope = scope
+        jobs.append(other)
+        idleTask?.cancel()
+        stopQueue = false
+        toResolve.append(other.id)
+        if !isDownloading { status = "Checking link…" }
+        resolveNext()
+    }
+
     // MARK: Controlling
     /// Stop the download in progress; the queue carries on with the next one.
     func cancelCurrent() {
@@ -155,9 +283,10 @@ final class DownloadManager: ObservableObject {
         // a look-up in flight must stop too, and must never go on to the cookie probe
         abandonProbe()
         toResolve.removeAll()
-        for i in jobs.indices where jobs[i].state == .queued {
+        for i in jobs.indices where jobs[i].state == .queued || jobs[i].state == .needsChoice {
             jobs[i].state = .cancelled
             jobs[i].isResolving = false
+            jobs[i].question = nil
         }
         startNotes.removeAll()
         if process != nil {
@@ -185,11 +314,16 @@ final class DownloadManager: ObservableObject {
             cancelCurrent()
         } else {
             let wasProbing = id == probingID
+            let wasAsking = jobs.first { $0.id == id }?.state == .needsChoice
             if wasProbing { abandonProbe() }  // stops yt-dlp and skips the cookie retry
             toResolve.removeAll { $0 == id }
             startNotes[id] = nil
             jobs.removeAll { $0.id == id }
-            if jobs.isEmpty { status = "Idle" }
+            if jobs.isEmpty {
+                status = "Idle"
+            } else if wasAsking, runningID == nil, !hasPendingWork {
+                finishQueue()  // that was the last question: say how the rest went
+            }
             if wasProbing { resolveNext() }  // the queue carries on with the next link
         }
     }
@@ -220,6 +354,21 @@ final class DownloadManager: ObservableObject {
         }
         jobs[i].state = .queued
         jobs[i].detail = nil
+        idleTask?.cancel()
+        // a link cancelled while it was still waiting for its choice asks again: without a choice,
+        // yt-dlp would download the whole list
+        if jobs[i].scope == nil, let question = Self.firstQuestion(for: jobs[i].kind) {
+            jobs[i].state = .needsChoice
+            jobs[i].question = question
+            jobs[i].isResolving = true
+        } else if jobs[i].only == nil, let size = jobs[i].listedSize,
+            let question = QueueLogic.sizeQuestion(
+                count: size.count, timedOut: size.partial, alreadyConfirmed: jobs[i].sizeConfirmed)
+        {
+            // cancelled before its size was confirmed: confirm it now
+            jobs[i].state = .needsChoice
+            jobs[i].question = question
+        }
         stopQueue = false
         hadError = jobs.contains { $0.state == .failed }
         pump()
@@ -275,11 +424,12 @@ final class DownloadManager: ObservableObject {
             probeControl = control
             probingID = id
             let path = Self.path(for: .ytDlp)
-            let url = job.url
+            let url = job.ytDlpURL
             let only = job.only
             var options = job.options
             // decided for the yt-dlp that will actually run, not when the link was added
             options.jsRuntimePath = DependencyManager.jsRuntimePath(forYtDlpAt: path)
+            options.playlistScope = job.scope
             Task.detached { [weak self] in
                 // always without cookies first; with them only after a sign-in failure
                 var result = Self.probe(
@@ -313,15 +463,30 @@ final class DownloadManager: ObservableObject {
         if let i = jobs.firstIndex(where: { $0.id == id }) {
             jobs[i].isResolving = false
             if usedCookies { jobs[i].needsCookies = true }
-            if let result {
-                jobs[i].title = result.playlistTitle ?? result.titles.first
-                if let name = result.playlistTitle, result.titles.count > 1, jobs[i].state == .queued {
+            if let result { jobs[i].title = result.playlistTitle ?? result.titles.first }
+            if let result, jobs[i].state == .queued {
+                if let name = result.playlistTitle, result.titles.count > 1 {
                     jobs[i].playlist = PlaylistProgress(
                         title: name,
                         items: result.titles.enumerated().map {
                             PlaylistItem(id: $0.offset + 1, title: $0.element)
                         },
                         current: nil, speed: nil)
+                }
+                // A very long playlist is confirmed once before it starts. So is one whose look-up ran out
+                // of time, since its real size is unknown. (A single video that was slow to look up is not.)
+                let job = jobs[i]
+                let isList = result.titles.count > 1 || job.scope == .playlist || job.kind == .playlist || job.kind == .mix
+                if isList {
+                    jobs[i].listedSize = .init(count: result.titles.count, partial: result.timedOut)
+                    if let question = QueueLogic.sizeQuestion(
+                        count: result.titles.count, timedOut: result.timedOut, alreadyConfirmed: job.sizeConfirmed)
+                    {
+                        jobs[i].state = .needsChoice
+                        jobs[i].question = question
+                        // it may have been added a while ago, from a window that has been closed since
+                        NotificationCenter.default.post(name: .downerQuestionWaiting, object: nil)
+                    }
                 }
             }
         }
@@ -331,6 +496,8 @@ final class DownloadManager: ObservableObject {
     struct ProbeResult {
         var playlistTitle: String?
         var titles: [String]
+        /// The look-up hit its time limit; `titles` is what it had listed by then.
+        var timedOut = false
     }
 
     /// One quick yt-dlp call that lists titles without downloading anything.
@@ -365,7 +532,13 @@ final class DownloadManager: ObservableObject {
         }
 
         // a link that never answers must not hold up the queue; with cookies, leave time for the Keychain prompt
-        let watchdog = DispatchWorkItem { if proc.isRunning { proc.terminate() } }
+        let timedOut = LockedFlag()
+        let watchdog = DispatchWorkItem {
+            if proc.isRunning {
+                timedOut.set()
+                proc.terminate()
+            }
+        }
         DispatchQueue.global().asyncAfter(
             deadline: .now() + QueueLogic.probeTimeout(useCookies: useCookies), execute: watchdog)
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
@@ -373,6 +546,13 @@ final class DownloadManager: ObservableObject {
         watchdog.cancel()
         errorDone.wait()
         let errorText = errors.value
+        // A long playlist can outlast the time limit: keep what was listed (yt-dlp prints each entry as
+        // it goes), so the queue shows those videos and the playlist can still be confirmed.
+        if timedOut.isSet, !control.isCancelled {
+            var partial = parse(data) ?? ProbeResult(titles: [])
+            partial.timedOut = true
+            return (partial, errorText)
+        }
         guard proc.terminationStatus == 0 else { return (nil, errorText) }
         return (parse(data), errorText)
     }
@@ -399,7 +579,11 @@ final class DownloadManager: ObservableObject {
     private func pump() {
         guard runningID == nil, !stopQueue else { return }
         guard let next = jobs.first(where: { $0.state == .queued }) else {
-            finishQueue()
+            if needsChoice {
+                status = "Choose what to download."  // the queue carries on once they answer
+            } else {
+                finishQueue()
+            }
             return
         }
         // a tool is being updated or installed: wait, and carry on when it is done
@@ -429,6 +613,7 @@ final class DownloadManager: ObservableObject {
         let ytDlpPath = Self.path(for: .ytDlp)
         // decided for the yt-dlp that will actually run (it may have been changed since the link was added)
         options.jsRuntimePath = DependencyManager.jsRuntimePath(forYtDlpAt: ytDlpPath)
+        options.playlistScope = job.scope
         let fm = FileManager.default
         let ffmpegPath = Self.path(for: .ffmpeg)
         let ffprobePath = Self.path(for: .ffprobe)
@@ -463,7 +648,7 @@ final class DownloadManager: ObservableObject {
                 ffmpegDirectory: (ffmpegPath as NSString).deletingLastPathComponent,
                 outputFolder: job.options.folder.path,
                 only: job.only),
-            useCookies: job.needsCookies, url: job.url)
+            useCookies: job.needsCookies, url: job.ytDlpURL)
 
         guard let workDirectory = RunDirectory.make() else {
             stop("Couldn't prepare a working folder.")
@@ -713,7 +898,7 @@ final class DownloadManager: ObservableObject {
     }
 
     private func resetIfIdle() {
-        if !isActive { status = "Idle" }
+        if !hasPendingWork { status = "Idle" }  // never over a question that is still waiting
     }
 
     // MARK: Parsing helpers
@@ -729,4 +914,10 @@ final class DownloadManager: ObservableObject {
         let rest = line[r.upperBound...].trimmingCharacters(in: .whitespaces)
         return rest.split(separator: " ").first.map(String.init)
     }
+}
+
+extension Notification.Name {
+    /// A link started waiting for an answer after it was looked up (a large playlist), so the question
+    /// should be brought into view.
+    static let downerQuestionWaiting = Notification.Name("DownerQuestionWaiting")
 }

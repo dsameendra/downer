@@ -134,9 +134,11 @@ struct PlaylistTracker {
         let total = indexMap == nil ? m : (progress?.total ?? m)
         if progress == nil || progress?.total != total {
             guard total > 1 else { return }  // a single video is not a playlist
+            // the look-up may have listed only part of a long playlist: keep the titles it found
+            let known = progress?.items ?? []
             progress = PlaylistProgress(
-                title: playlistName,
-                items: (1...total).map { PlaylistItem(id: $0) }
+                title: playlistName.isEmpty ? (progress?.title ?? "") : playlistName,
+                items: (1...total).map { PlaylistItem(id: $0, title: $0 <= known.count ? known[$0 - 1].title : nil) }
             )
         }
         guard var p = progress else { return }

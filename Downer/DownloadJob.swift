@@ -26,6 +26,8 @@ struct JobOptions: Equatable {
     /// Not captured when a link is added: it depends on the yt-dlp that actually runs, so the look-up and
     /// the download fill it in just before they start (`DependencyManager.jsRuntimePath(forYtDlpAt:)`).
     var jsRuntimePath: String? = nil
+    /// `--no-playlist` / `--yes-playlist`, from the job's choice; filled in just before yt-dlp runs.
+    var playlistScope: PlaylistScope? = nil
 
     static func current(_ defaults: UserDefaults = .standard) -> JobOptions {
         let downloads =
@@ -46,12 +48,29 @@ struct JobOptions: Equatable {
 }
 
 struct DownloadJob: Identifiable, Equatable {
-    enum State: Equatable { case queued, running, done, failed, cancelled }
+    /// `needsChoice`: waiting for the person (see `question`). It is not looked up, run or counted as
+    /// active until they answer, and it never holds up the links behind it.
+    enum State: Equatable { case needsChoice, queued, running, done, failed, cancelled }
 
     let id = UUID()
     let url: String
     let options: JobOptions
     var state: State = .queued
+    /// What the link is, read from the address when it was added.
+    var kind: LinkKind = .other
+    /// Just the video or the whole list; nil until chosen, or when yt-dlp decides.
+    var scope: PlaylistScope?
+    /// Set while `state == .needsChoice`.
+    var question: JobQuestion?
+    /// The person said yes to a large playlist, so a retry never asks again.
+    var sizeConfirmed = false
+    /// How many videos the look-up listed, and whether it ran out of time first (so there may be more).
+    var listedSize: ListedSize?
+
+    struct ListedSize: Equatable {
+        var count: Int
+        var partial: Bool
+    }
     /// A video's title, or a playlist's name.
     var title: String?
     /// 0…1 for a single video.
@@ -99,7 +118,19 @@ struct DownloadJob: Identifiable, Equatable {
     }
 
     var displayTitle: String {
-        title ?? (isResolving ? "Checking link…" : Self.shortName(of: url))
+        if let title { return title }
+        if case .scope(let isMix) = question { return isMix ? "Video in a Mix" : "Video in a playlist" }
+        if question == .wholeMix { return "A YouTube Mix" }
+        return isResolving && state != .needsChoice ? "Checking link…" : Self.shortName(of: url)
+    }
+
+    /// The link handed to yt-dlp (see `LinkScope.urlForYtDlp`); `url` stays the one that was pasted.
+    var ytDlpURL: String { LinkScope.urlForYtDlp(url, scope: scope) }
+
+    /// "a Mix" or "a playlist" when only the video of a video-in-a-list link is downloaded.
+    var fromList: String? {
+        guard scope == .video, kind.isVideoInList else { return nil }
+        return kind.isMix ? "a Mix" : "a playlist"
     }
 
     static func shortName(of url: String) -> String {
@@ -138,7 +169,7 @@ struct QueueSummary: Equatable {
         let handled = jobs.reduce(0.0) { sum, job in
             switch job.state {
             case .done: return sum + Double(job.units)
-            case .queued: return sum
+            case .queued, .needsChoice: return sum
             case .running, .failed, .cancelled:
                 if let playlist = job.playlist {
                     return sum + Double(playlist.doneCount + playlist.failed.count)

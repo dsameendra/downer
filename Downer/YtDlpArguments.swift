@@ -14,7 +14,8 @@ enum YtDlpArguments {
         case download(pathFile: String, ffmpegDirectory: String, outputFolder: String, only: [Int]?)
     }
 
-    /// Order: format args (download only), extra args, cookie flags, Downer's own flags (downloads also
+    /// Order: format args (download only), extra args, cookie flags, the video-or-playlist flag, Downer's
+    /// own flags (downloads also
     /// cancel info-json writing), the link. The look-up only gets the extra args that change how a site
     /// is reached (see `ExtraArguments.forLookup`); filters, waits and format choices are for the download.
     ///
@@ -39,9 +40,14 @@ enum YtDlpArguments {
             args.append("--no-cookies-from-browser")
         }
         if let runtime = options.jsRuntimePath { args += ["--js-runtimes", "deno:" + runtime] }
+        // After the extra arguments and any config file, so the person's choice always wins. (Extra
+        // arguments refuse both flags anyway: Settings → Downloads is the one place to decide.)
+        if let scope = options.playlistScope { args.append(scope.flag) }
         switch purpose {
         case .probe(let only):
-            args += ["--flat-playlist", "--no-warnings", "--print", "%(playlist_title|)s\t%(title)s"]
+            // --lazy-playlist prints each entry as it arrives, so a long list stopped by the time limit
+            // still has the titles listed so far (by default yt-dlp collects the whole list first)
+            args += ["--flat-playlist", "--lazy-playlist", "--no-warnings", "--print", "%(playlist_title|)s\t%(title)s"]
             args += items(only)
         case .download(let pathFile, let ffmpegDirectory, let outputFolder, let only):
             // A config file's --write-info-json / --embed-info-json would write the `cookies` field of the

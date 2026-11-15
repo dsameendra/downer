@@ -29,17 +29,17 @@ and works on macOS 14 and later.
 
 https://github.com/user-attachments/assets/ce59fdfd-23f9-4584-b3f4-2466414c2a74
 
-## What's new in 2.1
+## What's new in 2.2
 
-- **Sign in for videos that need it**: optional, off by default, and it asks first. See [Signing in](#signing-in-for-age-restricted-or-bot-checked-videos).
-- **[Best Compatibility](#best-compatibility)**: one switch for MP4s that play everywhere, fixing "sound but no picture" in QuickTime.
-- **MOV container**, and WebM downloads that fall back to MKV instead of failing.
-- **[Extra yt-dlp arguments](#extra-yt-dlp-arguments)** from a list of common options.
-- **Update buttons** for `yt-dlp`, `ffmpeg` and `deno`, and `deno` recommended for YouTube.
-- **Downer [updates itself](#updates).** On 2.0.x? Install 2.1 by hand once, and it takes care of the rest.
-- Clearer error messages that say what to do next.
+- **[Video or playlist?](#videos-inside-a-playlist)** A YouTube link to a video playing inside a playlist or Mix
+  (`watch?v=…&list=…`) now asks whether you want just the video or the whole list, instead of downloading the whole
+  list. Set a default in **Settings → Downloads**.
+- **Mixes are never downloaded whole without asking.** YouTube makes them on the fly, and one link can hold 100+ videos.
+- **Large playlists are confirmed first.** A playlist of 200 or more videos asks once before it starts.
 
-Older versions are in the [changelog](CHANGELOG.md).
+2.1 added optional [sign-in](#signing-in-for-age-restricted-or-bot-checked-videos),
+[Best Compatibility](#best-compatibility), [extra yt-dlp arguments](#extra-yt-dlp-arguments), tool update buttons and
+[self-updating](#updates). Every version is in the [changelog](CHANGELOG.md).
 
 ## Features
 
@@ -57,6 +57,8 @@ Older versions are in the [changelog](CHANGELOG.md).
 - **Add links at any time.** Paste and press Return; the field clears for the next one. Pasting several links adds
   them all. Invalid or duplicate links are ignored.
 - **Videos and playlists, mixed freely.** A playlist shows one row per video, each with its own progress.
+- **[Video or playlist?](#videos-inside-a-playlist)** A link to a video inside a playlist asks which you meant
+  before anything is downloaded.
 - **One at a time, in order**, so your connection and disk are never hammered. Each link keeps the settings it was
   added with.
 - **A tray that comes up from the bottom** shows every link and video. Drag or two-finger swipe it up and down.
@@ -133,7 +135,8 @@ From 2.1 on, Downer [updates itself](#updates).
 ## Using Downer
 
 1. Open **Downer**, or click its menu bar icon.
-2. Paste a video or playlist link and press **Return**.
+2. Paste a video or playlist link and press **Return**. If the link is a video inside a playlist or Mix, choose
+   **Download Video** or the whole list.
 3. Choose **Video + Audio**, **Audio Only** or **Video Only**, and the quality and format you want.
 4. Paste more links while it downloads. They join the queue.
 5. Drag the tray up to see what is happening to each video.
@@ -148,6 +151,7 @@ Closing the window hides it and the Dock icon. Click the menu bar icon to bring 
 |---|---|
 | **Appearance** | Theme (Device, Light or Dark), background glow and haptic feedback |
 | **Global Shortcut** | The key combination that opens the quick download popover |
+| **Downloads** | What a link to a video inside a playlist does: Ask Each Time (the default), Just the Video or The Whole Playlist. See [below](#videos-inside-a-playlist). |
 | **Sign-in (browser cookies)** | Optional sign-in through your browser, off by default. See [below](#signing-in-for-age-restricted-or-bot-checked-videos). |
 | **Requirements** | Shows `yt-dlp`, `ffmpeg`, `ffprobe` and `deno` with their versions, with **Install**, **Update** and **Browse…** |
 | **Updates** | Check for updates automatically (on by default) and **Check now** |
@@ -162,6 +166,26 @@ About the tools:
   installed some other way show **Manual**.
 - `deno` is a JavaScript runtime, recommended for YouTube: without it some videos may fail or offer fewer formats.
   Downer passes it to `yt-dlp` 2025.11.12 or newer automatically, so update `yt-dlp` if yours is older.
+
+### Videos inside a playlist
+
+A YouTube link like `youtube.com/watch?v=…&list=…` (for example a video you clicked inside a playlist or a Mix, often
+with `&start_radio=1`) names one video **and** a list. `yt-dlp` downloads the whole list for these by default, so
+Downer asks first:
+
+- **Download Video** (the default, or press Return) downloads just that video. **Download Playlist** or
+  **Download Whole Mix** downloads every video in the list. **Cancel** puts the link back in the field.
+- **Remember my choice** makes your answer the default. Change it any time in **Settings → Downloads → Video in a
+  playlist**.
+- Pasting or dropping several such links lists them in the queue with **Video** and **Playlist** buttons on each row,
+  and **All: Just Videos** / **All: Whole Lists** for all of them at once.
+- **Mixes** (lists made by YouTube, `list=RD…`) can hold 100+ videos and change each time. Downer never downloads a
+  whole Mix without asking, whatever the setting.
+- **A link to a whole Mix** (`playlist?list=RD…`) asks once before it downloads.
+- **Large playlists:** a playlist of 200 or more videos, or one too long to list in time, asks once before it starts.
+- Picked the wrong one? Swipe the row for **Whole Mix**/**Whole Playlist** or **Just Video** to queue the other choice.
+- Links to a playlist page (`playlist?list=…`) always download the playlist, as before. On other sites `yt-dlp`
+  decides, unless the setting is Just the Video or The Whole Playlist.
 
 ### Signing in for age-restricted or bot-checked videos
 
@@ -216,7 +240,7 @@ Only common download options are allowed:
 | Site settings | `--extractor-args`, only for settings such as `youtube:player_client=web` |
 
 Everything else is refused, with the reason shown. That includes options Downer manages itself (output names and
-folders, progress, playlist items), options that run commands or change Downer's tools (`--exec`, `--update`, config
+folders, progress, playlist items, `--no-playlist`/`--yes-playlist`, which are set in Settings → Downloads), options that run commands or change Downer's tools (`--exec`, `--update`, config
 locations), and anything that touches cookies (use the Sign-in setting instead). Write long options in full; an
 abbreviation such as `--verb` is refused.
 
@@ -305,7 +329,9 @@ Making a signed release (certificate, Sparkle key, DMG, appcast and publishing) 
 | File | Role |
 |---|---|
 | `DownloadManager.swift` | The queue: looks links up, runs `yt-dlp` one at a time, turns its output into progress |
-| `QueueLogic.swift` | The queue's decisions (retry, cancel), the output reader and the cancellable look-up |
+| `QueueLogic.swift` | The queue's decisions (retry, cancel, video or playlist), the output reader and the cancellable look-up |
+| `LinkScope.swift` | Reads a link: one video, a playlist, or a video inside a playlist or Mix |
+| `PlaylistChoiceView.swift` | The "just the video or the whole list?" card and the row buttons |
 | `DownloadJob.swift` | One queued link and the settings it was added with |
 | `PlaylistModel.swift` | Follows a playlist run line by line (current video, progress, failures) |
 | `QueueTray.swift` | The draggable tray with every link and video |

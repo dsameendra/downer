@@ -49,9 +49,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
         popover = NSPopover()
         popover.behavior = .transient
         popover.delegate = self
-        popover.contentSize = NSSize(width: 360, height: 196)
-        popover.contentViewController =
-            NSHostingController(rootView: PopOverView())
+        popover.contentSize = NSSize(width: 360, height: PopOverView.height)
+        let popoverHost = NSHostingController(rootView: PopOverView())
+        // the popover grows while a question card is showing, and shrinks back after
+        popoverHost.sizingOptions = [.preferredContentSize]
+        popover.contentViewController = popoverHost
 
         statusItem = NSStatusBar.system.statusItem(
             withLength: NSStatusItem.variableLength
@@ -66,7 +68,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
             // links dropped on the icon join the queue
             let drop = StatusItemDropView(frame: btn.bounds)
             drop.autoresizingMask = [.width, .height]
-            drop.onDrop = { text in DownloadManager.shared.add(text) }
+            drop.onDrop = { [weak self] text in
+                let added = DownloadManager.shared.add(text)
+                // a dropped link that asks "video or list?" needs somewhere to show the question
+                if added > 0, DownloadManager.shared.needsChoice { self?.showQuestion() }
+            }
             btn.addSubview(drop)
         }
 
@@ -81,6 +87,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
         dl.$completions
             .dropFirst()
             .sink { [weak self] _ in self?.flashDone() }
+            .store(in: &cancellables)
+
+        // A large playlist asks after its look-up, perhaps after the window or popover was closed. Bring
+        // the question forward only while Downer is the active app: never pull it in front of someone
+        // working elsewhere (the menu bar dot shows it is waiting, and it is there when they come back).
+        NotificationCenter.default.publisher(for: .downerQuestionWaiting)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in if NSApp.isActive { self?.showQuestion() } }
             .store(in: &cancellables)
 
         // register global shortcut
@@ -121,7 +135,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
             }
         } else if showingDone {
             state = .done
-        } else if dl.hadError || (deps.hasCheckedOnce && !deps.missing.isEmpty)
+        } else if dl.needsChoice || dl.hadError || (deps.hasCheckedOnce && !deps.missing.isEmpty)
             || UpdateChecker.shared.updatePending
         {
             state = .attention
@@ -209,6 +223,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
 
 
     // MARK: Popover
+    /// Shows the question for a link that is waiting: in the main window if it is open, otherwise in
+    /// the popover. Never closes anything that is already showing.
+    func showQuestion() {
+        if let window = mainWindow, window.isVisible {
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+        } else if !popover.isShown {
+            togglePopover(nil)
+        }
+    }
+
     @objc func togglePopover(_ sender: Any?) {
         guard let btn = statusItem.button else { return }
         if popover.isShown {

@@ -103,6 +103,83 @@ enum QueueLogic {
     /// Two minutes is enough to read the prompt and type a password, without letting a site that hangs
     /// hold up the whole queue for long.
     nonisolated static func probeTimeout(useCookies: Bool) -> TimeInterval { useCookies ? 120 : 45 }
+
+    // MARK: Video or playlist
+    /// What a newly added link does: ask first, or go ahead with a scope (nil: no flag, yt-dlp decides).
+    /// A Mix always asks unless the setting is Just the Video, because YouTube makes Mixes up on the fly
+    /// and they can run to hundreds of videos.
+    static func playlistDecision(for kind: LinkKind, setting: PlaylistLinkChoice) -> PlaylistDecision {
+        switch kind {
+        case .video, .playlist:
+            return .go(nil)
+        case .mix:
+            return .ask  // a whole Mix is only ever downloaded when the person says so
+        case .videoInList(let isMix):
+            switch setting {
+            case .ask: return .ask
+            case .video: return .go(.video)
+            case .playlist: return isMix ? .ask : .go(.playlist)
+            }
+        case .other:
+            // other sites have no prompt; the setting still applies when it is a firm choice
+            switch setting {
+            case .ask: return .go(nil)
+            case .video: return .go(.video)
+            case .playlist: return .go(.playlist)
+            }
+        }
+    }
+
+    /// Playlists with at least this many videos are confirmed once before they download.
+    static let largePlaylist = 200
+
+    /// The size question for a looked-up playlist, if it needs one. `timedOut`: the look-up was stopped
+    /// before it finished, so `count` is only what it had listed by then and the real size is unknown,
+    /// which is asked about too: a list too long to look up in time is a long list.
+    static func sizeQuestion(count: Int, timedOut: Bool, alreadyConfirmed: Bool) -> JobQuestion? {
+        guard !alreadyConfirmed, timedOut || count >= largePlaylist else { return nil }
+        return .size(count: count, atLeast: timedOut)
+    }
+
+    /// The same link with the same choice is already in the queue and not finished, so the same link can
+    /// be queued once as a video and once as a list. A link still waiting for its choice (scope nil)
+    /// matches another undecided copy, so pasting it twice asks once.
+    static func isDuplicate(url: String, scope: PlaylistScope?, in jobs: [DownloadJob], except id: UUID? = nil) -> Bool {
+        jobs.contains { $0.id != id && $0.url == url && !$0.isFinished && $0.scope == scope }
+    }
+}
+
+enum PlaylistDecision: Equatable {
+    case ask
+    case go(PlaylistScope?)
+}
+
+/// Why a job is waiting for the person before it can go on.
+enum JobQuestion: Equatable {
+    /// A video inside a list: just the video, or the whole list?
+    case scope(isMix: Bool)
+    /// A link to a whole Mix: download all of it?
+    case wholeMix
+    /// A playlist of `count` videos (or more, if `atLeast`): download all of them?
+    case size(count: Int, atLeast: Bool)
+}
+
+/// A flag shared between threads (a look-up stopped by its time limit).
+final class LockedFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var flag = false
+
+    func set() {
+        lock.lock()
+        flag = true
+        lock.unlock()
+    }
+
+    var isSet: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return flag
+    }
 }
 
 /// A string shared between threads (a look-up's error lines). In memory only.

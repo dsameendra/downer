@@ -58,6 +58,35 @@ struct PopOverView: View {
             .motion(Motion.quick, value: urlFocused)
             .motion(Motion.quick, value: videoURL.isEmpty)
 
+            if let job = dl.pendingChoices.first {
+                // a link waiting for "video or list?" (or a large playlist): answer it here
+                PlaylistChoiceCard(
+                    job: job, waiting: dl.pendingChoices.count, compact: true,
+                    onChoose: { scope, remember in
+                        withAnimation(Motion.standard(reduce: reduceMotion)) {
+                            dl.choose(job.id, scope: scope, remember: remember)
+                        }
+                    },
+                    onConfirmSize: { withAnimation(Motion.standard(reduce: reduceMotion)) { dl.confirmSize(job.id) } },
+                    onCancel: {
+                        withAnimation(Motion.standard(reduce: reduceMotion)) {
+                            if let link = dl.cancelChoice(job.id), videoURL.isEmpty { videoURL = link }
+                        }
+                    }
+                )
+                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.5))
+                .id(job.id)
+                .transition(.opacity.combined(with: .scale(scale: 0.97)))
+                .onAppear {
+                    // a "video or list?" card answers the link just submitted, so Return and Esc go to it;
+                    // a size question can arrive later and must not interrupt typing
+                    if case .scope = job.question { urlFocused = false }
+                }
+            }
+
             Button {
                 if cancels { dl.cancelAll() } else { submit() }
             } label: {
@@ -71,8 +100,8 @@ struct PopOverView: View {
                 .motion(Motion.quick, value: cancels)
                 .motion(Motion.quick, value: addsToQueue)
             }
-            .buttonStyle(DownloadButtonStyle(isCancel: cancels, height: 46, flat: true))
-            .keyboardShortcut(cancels ? nil : .defaultAction)
+            .buttonStyle(DownloadButtonStyle(isCancel: cancels, height: dl.needsChoice ? 38 : 46, flat: true))
+            .keyboardShortcut(cancels || dl.needsChoice ? nil : .defaultAction)
             .disabled(videoURL.isEmpty && !dl.isActive)
 
             DownloadStatusLine(
@@ -92,7 +121,9 @@ struct PopOverView: View {
         }
         .padding(16)
         .offset(y: -RubberBand.resist(abs(pull), range: 18) * (pull >= 0 ? 1 : -1))
-        .frame(width: 360, height: 196)  // room for a two-line status
+        // room for a two-line status, and for the question card while one is waiting
+        .frame(width: 360, height: dl.needsChoice ? Self.askingHeight : Self.height)
+        .motion(value: dl.needsChoice)
         .background(TrackpadScrollRegion(handlers: swipeHandlers))
         .tint(Brand.red)
     }
@@ -112,6 +143,9 @@ struct PopOverView: View {
         }
         return h
     }
+
+    static let height: CGFloat = 196
+    static let askingHeight: CGFloat = 352
 
     private static func copiedLink() -> String? {
         guard
