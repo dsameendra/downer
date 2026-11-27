@@ -110,6 +110,16 @@ struct PopOverView: View {
                 completions: dl.completions
             )
             .frame(maxHeight: .infinity)
+
+            if showsReveal {
+                Button {
+                    dl.revealFiles()
+                } label: {
+                    Label("Show in Finder", systemImage: "folder")
+                }
+                .buttonStyle(PillButtonStyle())
+                .transition(.opacity.combined(with: .scale(scale: 0.94)))
+            }
         }
         // Opened by the menu bar icon or the global shortcut: pick up a copied
         // link and put the cursor in the field, so copy → shortcut → Return works.
@@ -122,8 +132,9 @@ struct PopOverView: View {
         .padding(16)
         .offset(y: -RubberBand.resist(abs(pull), range: 18) * (pull >= 0 ? 1 : -1))
         // room for a two-line status, and for the question card while one is waiting
-        .frame(width: 360, height: dl.needsChoice ? Self.askingHeight : Self.height)
+        .frame(width: 360, height: dl.needsChoice ? Self.askingHeight : (showsReveal ? Self.revealHeight : Self.height))
         .motion(value: dl.needsChoice)
+        .motion(value: showsReveal)
         .background(TrackpadScrollRegion(handlers: swipeHandlers))
         .tint(Brand.red)
     }
@@ -144,7 +155,11 @@ struct PopOverView: View {
         return h
     }
 
+    /// Files are ready and nothing is running: same condition as the main window's button.
+    private var showsReveal: Bool { !dl.lastFiles.isEmpty && !dl.isActive && !dl.needsChoice }
+
     static let height: CGFloat = 196
+    static let revealHeight: CGFloat = 232
     static let askingHeight: CGFloat = 352
 
     private static func copiedLink() -> String? {

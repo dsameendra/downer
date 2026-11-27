@@ -13,6 +13,7 @@ struct SettingsView: View {
     @AppStorage("backgroundGlow") private var backgroundGlow = true
     @AppStorage(Haptics.storageKey) private var hapticsOn = true
     @AppStorage(AppearanceMode.storageKey) private var appearanceRaw = AppearanceMode.system.rawValue
+    @AppStorage("playlistFolders") private var playlistFolders = true
     @AppStorage("extraArguments") private var extraArgumentsText = ""
     // browser sign-in: off unless the consent sheet's "Turn on" sets it
     @AppStorage("cookiesEnabled") private var cookiesEnabled = false
@@ -149,6 +150,14 @@ struct SettingsView: View {
                         }),
                     showsDivider: false)
                     .help("For links like youtube.com/watch?v=…&list=…")
+                HStack {
+                    Toggle("Put each playlist in its own folder", isOn: $playlistFolders)
+                        .font(.system(size: 14))
+                    Spacer()
+                }
+                .help("A whole playlist is saved in a folder named after it, inside your download folder")
+                .padding(.horizontal, 14)
+                .frame(height: 46)
             }
             VStack(alignment: .leading, spacing: 4) {
                 // follows the picker, so it always says what the current choice does
@@ -156,6 +165,11 @@ struct SettingsView: View {
                     .contentTransition(.opacity)
                     .motion(Motion.quick, value: playlistChoiceRaw)
                 Text(PlaylistLinkChoice.safetyNote)
+                Text(playlistFolders
+                    ? "A whole playlist is saved in a folder named after it, inside your download folder. Single videos are not."
+                    : "Every video is saved directly in your download folder, even from a playlist.")
+                    .contentTransition(.opacity)
+                    .motion(Motion.quick, value: playlistFolders)
             }
             .font(.system(size: 12))
             .foregroundStyle(.secondary)

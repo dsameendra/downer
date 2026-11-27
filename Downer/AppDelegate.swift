@@ -34,7 +34,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
         )
         w.contentViewController = hostVC
         DownerWindowChrome.apply(to: w, title: "Downer")
-        w.center()
+        WindowPlacement.restore(w)
         w.delegate = self
         w.makeKeyAndOrderFront(nil)
         w.isReleasedWhenClosed = false
@@ -263,6 +263,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSPopoverD
             )
             w.contentViewController = hostVC
             DownerWindowChrome.apply(to: w, title: "Downer")
+            WindowPlacement.restore(w)
             w.isReleasedWhenClosed = false
             w.delegate = self
             mainWindow = w

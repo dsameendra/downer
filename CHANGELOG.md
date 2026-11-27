@@ -2,6 +2,16 @@
 
 Downloads and full notes for every version are on the [Releases](https://github.com/dsameendra/Downer/releases) page.
 
+## 2.2.1
+
+- **Playlist folders.** A whole playlist is saved in a folder named after it. Turn it off in
+  **Settings → Downloads** (#20).
+- **Cancelling cleans up** the unfinished files it leaves behind. Finished videos are kept.
+- **Show in Finder** also appears in the menu bar window when a download finishes.
+- **The window remembers its position** and size.
+
+Details: [`docs/release-notes/2.2.1.md`](docs/release-notes/2.2.1.md).
+
 ## 2.2.0
 
 - **Video or playlist?** A YouTube link to a video playing inside a playlist or Mix (`watch?v=…&list=…`) asks whether
