@@ -6,7 +6,7 @@ app = defines["app"]            # path to Downer.app
 icon = defines["icon"]          # Downer.icns, used for the mounted volume
 background = defines["background"]
 
-format = "UDBZ"
+format = "UDZO"
 filesystem = "HFS+"
 size = None                     # let dmgbuild size the image
 
