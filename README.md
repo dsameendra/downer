@@ -12,7 +12,7 @@ Paste a link, add as many more as you like, and let Downer work through them in 
 
 _No terminal. No browser extension. Just a menu bar icon and a shortcut._
 
-**[Download the latest release](https://github.com/dsameendra/Downer/releases/latest)**
+**[Download the latest release](https://github.com/dsameendra/Downer/releases/latest)** · **[Website](https://dsameendra.github.io/downer/)**
 
 </div>
 
@@ -28,6 +28,15 @@ and works on macOS 14 and later.
 </div>
 
 https://github.com/user-attachments/assets/ce59fdfd-23f9-4584-b3f4-2466414c2a74
+
+## What's new in 2.2.1
+
+- **[Playlist folders.](#playlist-folders)** A whole playlist is saved in a folder named after it. Turn it off in
+  **Settings → Downloads → Put each playlist in its own folder**.
+- **Cancelling cleans up.** The unfinished files a cancelled download leaves behind are removed. Finished videos are
+  kept.
+- **Show in Finder** now also appears in the menu bar window when a download finishes.
+- **The window remembers where you left it**, and its size.
 
 ## What's new in 2.2
 
@@ -64,7 +73,10 @@ https://github.com/user-attachments/assets/ce59fdfd-23f9-4584-b3f4-2466414c2a74
 - **A tray that comes up from the bottom** shows every link and video. Drag or two-finger swipe it up and down.
 - **Control each item**: remove, cancel, retry, reorder (press, hold and drag), or swipe a row sideways.
 - **Automatic retry** for network hiccups. Videos that are genuinely unavailable are not retried.
-- **Show in Finder** reveals every file the queue produced.
+- **Show in Finder** reveals every file the queue produced, in the window and in the menu bar popover.
+- **Cancel cleans up.** Cancelling a download removes the unfinished files it left in your folder. Videos that
+  already finished are kept, and a failed download keeps its pieces so **Retry** can carry on.
+- **Playlist folders.** A whole playlist is saved in a folder named after it ([details](#playlist-folders)).
 
 ### Menu bar and shortcut
 
@@ -140,9 +152,9 @@ From 2.1 on, Downer [updates itself](#updates).
 3. Choose **Video + Audio**, **Audio Only** or **Video Only**, and the quality and format you want.
 4. Paste more links while it downloads. They join the queue.
 5. Drag the tray up to see what is happening to each video.
-6. When the queue finishes, press **Show in Finder**.
+6. When the queue finishes, press **Show in Finder**, in the window or in the menu bar popover.
 
-Closing the window hides it and the Dock icon. Click the menu bar icon to bring it back, or right-click it for
+Downer remembers where you left its window, and its size. Closing the window hides it and the Dock icon. Click the menu bar icon to bring it back, or right-click it for
 **Open Downer**, **Check for Updates…** and **Quit Downer**.
 
 ## Settings
@@ -151,7 +163,7 @@ Closing the window hides it and the Dock icon. Click the menu bar icon to bring 
 |---|---|
 | **Appearance** | Theme (Device, Light or Dark), background glow and haptic feedback |
 | **Global Shortcut** | The key combination that opens the quick download popover |
-| **Downloads** | What a link to a video inside a playlist does: Ask Each Time (the default), Just the Video or The Whole Playlist. See [below](#videos-inside-a-playlist). |
+| **Downloads** | What a link to a video inside a playlist does: Ask Each Time (the default), Just the Video or The Whole Playlist (see [below](#videos-inside-a-playlist)), and whether each playlist gets [its own folder](#playlist-folders) |
 | **Sign-in (browser cookies)** | Optional sign-in through your browser, off by default. See [below](#signing-in-for-age-restricted-or-bot-checked-videos). |
 | **Requirements** | Shows `yt-dlp`, `ffmpeg`, `ffprobe` and `deno` with their versions, with **Install**, **Update** and **Browse…** |
 | **Updates** | Check for updates automatically (on by default) and **Check now** |
@@ -186,6 +198,13 @@ Downer asks first:
 - Picked the wrong one? Swipe the row for **Whole Mix**/**Whole Playlist** or **Just Video** to queue the other choice.
 - Links to a playlist page (`playlist?list=…`) always download the playlist, as before. On other sites `yt-dlp`
   decides, unless the setting is Just the Video or The Whole Playlist.
+
+### Playlist folders
+
+A whole playlist is saved in a folder named after it, inside your download folder, so its videos are easy to find
+when the titles have nothing in common. Single videos, and **Download Video** from a playlist link, are saved in your
+download folder as before. Turn it off in **Settings → Downloads → Put each playlist in its own folder** and every
+video is saved directly in your download folder. A job keeps the setting it was added with.
 
 ### Signing in for age-restricted or bot-checked videos
 
@@ -344,7 +363,9 @@ Making a signed release (certificate, Sparkle key, DMG, appcast and publishing) 
 | `DependencyManager.swift` | Finds, installs and updates `yt-dlp`, `ffmpeg`, `ffprobe` and `deno` |
 | `DesignSystem.swift` | Liquid Glass, materials, motion, buttons and window chrome |
 | `MenuBarIcon.swift` | The menu bar icon and its states, drawn in code |
+| `PartialFiles.swift` | Clears a cancelled download's unfinished files, and remembers the window's position |
 | `scripts/make-dmg.sh` | Builds the installer DMG and the signed `appcast.xml` |
+| `docs/index.html`, `docs/changelog.html` | The [website](https://dsameendra.github.io/downer/), published from `docs/` by `.github/workflows/pages.yml` after `scripts/check-site.py` passes |
 
 [`PRODUCT.md`](PRODUCT.md) describes who Downer is for, and [`DESIGN.md`](DESIGN.md) the design decisions behind it.
 

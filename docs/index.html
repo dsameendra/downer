@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Downer: Video and audio downloads for Mac</title>
+<meta name="description" content="Downer is a native macOS app for yt-dlp. Paste links, queue videos and playlists, and download video or audio from the menu bar or the main window. Free and open source.">
+<link rel="canonical" href="https://dsameendra.github.io/downer/">
+<meta name="theme-color" content="#f8f3f4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0e0a0c" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Downer">
+<meta property="og:title" content="Downer: Video and audio downloads, native to your Mac">
+<meta property="og:description" content="Paste a link, add as many more as you like, and let Downer work through them in order. A native Mac app for yt-dlp.">
+<meta property="og:url" content="https://dsameendra.github.io/downer/">
+<meta property="og:image" content="https://dsameendra.github.io/downer/assets/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="The Downer app icon beside the words Video and audio downloads, native to your Mac.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Downer: Video and audio downloads, native to your Mac">
+<meta name="twitter:description" content="Paste a link, add as many more as you like, and let Downer work through them in order.">
+<meta name="twitter:image" content="https://dsameendra.github.io/downer/assets/og.png">
+
+<link rel="icon" href="favicon-32.png" type="image/png" sizes="32x32">
+<link rel="icon" href="favicon-16.png" type="image/png" sizes="16x16">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="stylesheet" href="assets/site.css">
+<script>document.documentElement.classList.add("js")</script>
+<script src="assets/site.js" defer></script>
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Downer",
+  "applicationCategory": "MultimediaApplication",
+  "operatingSystem": "macOS 14 or later",
+  "description": "A native macOS app for yt-dlp with a download queue, playlist support and a menu bar popover.",
+  "url": "https://dsameendra.github.io/downer/",
+  "downloadUrl": "https://github.com/dsameendra/Downer/releases/latest",
+  "image": "https://dsameendra.github.io/downer/assets/og.png",
+  "license": "https://opensource.org/licenses/MIT",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+}
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="nav" id="nav">
+  <div class="wrap">
+    <a class="brand" href="#top" aria-label="Downer home"><img src="favicon-32.png" width="28" height="28" alt="">Downer</a>
+    <nav aria-label="Primary">
+      <ul>
+        <li><a href="index.html#features">Features</a></li>
+        <li><a href="index.html#principles">Principles</a></li>
+        <li><a href="index.html#screenshots">Screenshots</a></li>
+        <li><a href="index.html#install">Install</a></li>
+        <li><a href="index.html#privacy">Privacy</a></li>
+        <li><a href="changelog.html">Changelog</a></li>
+      </ul>
+    </nav>
+    <a class="btn btn-primary btn-sm" href="https://github.com/dsameendra/Downer/releases/latest">Download</a>
+  </div>
+  <div class="progress" id="progress" aria-hidden="true"></div>
+</header>
+
+<main id="main">
+<section class="hero" id="top">
+  <div class="wrap">
+    <img class="hero-icon reveal" src="assets/icons/icon-256.webp" width="104" height="104" alt="The Downer app icon: two glass chevrons on a red plate">
+    <h1 class="reveal" style="--i:1">Video and audio downloads, native to your Mac.</h1>
+    <p class="lede reveal" style="--i:2">Paste a link, add as many more as you like, and let Downer work through them in order. No terminal, no browser extension.</p>
+    <div class="cta reveal" style="--i:3">
+      <a class="btn btn-primary btn-lg" href="https://github.com/dsameendra/Downer/releases/latest">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-4.5-4.5M12 15l4.5-4.5M4 20h16"/></svg>
+        Download for macOS</a>
+      <a class="btn btn-ghost btn-lg" href="https://github.com/dsameendra/Downer">View on GitHub</a>
+    </div>
+    <p class="note reveal" style="--i:4">macOS 14+ · Liquid Glass on macOS 26 · Free and open source</p>
+
+    <div class="stage reveal" style="--i:5">
+      <div class="win">
+        <picture>
+              <source media="(prefers-color-scheme: dark)" srcset="assets/screens/main-dark.webp" type="image/webp">
+              <img fetchpriority="high" src="assets/screens/main-light.webp" width="651" height="1000" alt="The Downer window: a link field, a Video + Audio, Audio Only and Video Only switcher, resolution, container and quality, a Save to folder and a red Download button">
+            </picture>
+      </div>
+      <div class="win">
+        <picture>
+              <source media="(prefers-color-scheme: dark)" srcset="assets/screens/queue-dark.webp" type="image/webp">
+              <img loading="lazy" src="assets/screens/queue-light.webp" width="651" height="1000" alt="The Downer download queue open over the window: four of nine downloaded, a playlist with one row per video and an overall progress ring">
+            </picture>
+      </div>
+      <div class="pop">
+        <img loading="lazy" src="assets/screens/popover-dark.webp" width="772" height="412" alt="The Downer menu bar popover with a link field and a Download button">
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="trust" aria-label="Highlights">
+  <div class="wrap">
+    <ul>
+      <li>No accounts</li>
+      <li>No analytics</li>
+      <li>Signed updates</li>
+      <li>Open source</li>
+    </ul>
+  </div>
+</section>
+
+<section id="features">
+  <div class="wrap">
+    <div class="head reveal">
+      <p class="eyebrow">Features</p>
+      <h2 class="h2">Everything between the link and the file.</h2>
+    </div>
+    <div class="grid">
+      <article class="card reveal">
+        <div class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg></div>
+        <h3>Video, audio or both</h3><p>Video + audio, audio only or video only. Resolution from 240p to 8K, MP4, MKV, WebM or MOV, and audio kept as the source or converted to MP3, AAC or Opus.</p>
+      </article>
+      <article class="card reveal" style="--i:1">
+        <div class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h9"/></svg></div>
+        <h3>A queue that never blocks</h3><p>Paste another link whenever you like. Links run one at a time, in order, and each keeps the settings it was added with. Drag to reorder, swipe a row to cancel or retry.</p>
+      </article>
+      <article class="card reveal" style="--i:2">
+        <div class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></div>
+        <h3>Playlists, in their own folder</h3><p>One row per video, with retry for the ones that failed. A whole playlist is saved in a folder named after it, so it is easy to find later.</p>
+      </article>
+      <article class="card reveal">
+        <div class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M10 9l5 3-5 3z"/></svg></div>
+        <h3>Video or playlist?</h3><p>A link to a video inside a playlist or Mix asks what you meant before anything downloads. Mixes and very large playlists are never downloaded whole without asking.</p>
+      </article>
+      <article class="card reveal" style="--i:1">
+        <div class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="3"/><path d="M8 20h8M12 16v4"/></svg></div>
+        <h3>Menu bar and shortcut</h3><p>Copy a link anywhere, press your shortcut, and the popover opens with the link filled in. Press Return and you are done.</p>
+      </article>
+      <article class="card reveal" style="--i:2">
+        <div class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
+        <h3>Files that play everywhere</h3><p>Best Compatibility makes H.264 + AAC MP4s that open in QuickTime, on iPhones and on TVs, instead of files that play sound with no picture.</p>
+      </article>
+      <article class="card reveal">
+        <div class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></div>
+        <h3>Cancel cleans up</h3><p>Cancel a download and its unfinished files are removed from your folder. Videos that already finished stay, and a failed download keeps its pieces so Retry can carry on.</p>
+      </article>
+      <article class="card reveal" style="--i:1">
+        <div class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg></div>
+        <h3>Keeps itself current</h3><p>Install and update yt-dlp, ffmpeg and deno from Settings. Downer updates itself, signed and verified, and waits for running downloads to finish first.</p>
+      </article>
+      <article class="card reveal" style="--i:2">
+        <div class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></div>
+        <h3>Sign-in only if you ask</h3><p>Off by default, with a consent screen first. Downer tries without cookies and uses your browser's sign-in only when a site says it is required. It never stores them.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section id="principles">
+  <div class="wrap">
+    <div class="head reveal">
+      <p class="eyebrow">Principles</p>
+      <h2 class="h2">Made the way a Mac app should be.</h2>
+      <p class="lede">Downer is built to five rules. They decide what goes in, and what stays out.</p>
+    </div>
+    <div class="principles">
+      <article class="principle reveal">
+        <h3>The link and the button are the whole job</h3><p>Everything else is a default you set once. Paste, press Return, and the file is in your folder.</p>
+      </article>
+      <article class="principle reveal" style="--i:1">
+        <h3>One product, two windows</h3><p>The menu bar popover and the main window share one queue, one set of remembered choices and one look.</p>
+      </article>
+      <article class="principle reveal">
+        <h3>Native first</h3><p>System controls, system materials and SF Symbols. Downer honours Reduce Transparency, Increase Contrast and Reduce Motion.</p>
+      </article>
+      <article class="principle reveal" style="--i:1">
+        <h3>Honest status</h3><p>Progress is parsed from what yt-dlp actually reports: per video, per playlist and across the whole queue. Nothing is made up to look busy.</p>
+      </article>
+      <article class="principle wide reveal">
+        <h3>Adding is never blocked</h3><p>Whatever is running, the next link can always be pasted. It simply joins the queue.</p>
+      </article>
+      <article class="principle wide plain reveal">
+        <h3>How it looks follows the same restraint</h3>
+        <p>Glass is for the controls you touch: the link field, the switcher and the Download dock. Content sits on flat surfaces, so glass never sits on glass. This page follows the rules too.</p>
+        <ul class="rules">
+          <li><b>Red</b> only for the main action and the progress line</li>
+          <li><b>Capsules</b> for fields and buttons</li>
+          <li><b>Smooth</b> motion, never bouncy</li>
+          <li><b>Light and dark</b>, both first class</li>
+        </ul>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section id="screenshots">
+  <div class="wrap">
+    <div class="head center reveal">
+      <p class="eyebrow">Screenshots</p>
+      <h2 class="h2">Calm, native, yours.</h2>
+    </div>
+    <div class="gallery-bar reveal">
+      <div class="tabs" role="tablist" aria-label="Screens">
+        <button role="tab" id="t-window" aria-controls="p-window" aria-selected="true">Window</button>
+        <button role="tab" id="t-queue" aria-controls="p-queue" aria-selected="false" tabindex="-1">Queue</button>
+        <button role="tab" id="t-peek" aria-controls="p-peek" aria-selected="false" tabindex="-1">Tray</button>
+        <button role="tab" id="t-popover" aria-controls="p-popover" aria-selected="false" tabindex="-1">Popover</button>
+        <button role="tab" id="t-settings" aria-controls="p-settings" aria-selected="false" tabindex="-1">Settings</button>
+      </div>
+    </div>
+    <div class="reveal">
+      <figure class="panel" id="p-window" role="tabpanel" aria-labelledby="t-window">
+        <div class="win"><picture>
+              <source media="(prefers-color-scheme: dark)" srcset="assets/screens/main-dark.webp" type="image/webp">
+              <img loading="lazy" src="assets/screens/main-light.webp" width="651" height="1000" alt="The Downer window in your system appearance">
+            </picture></div>
+        <figcaption>The window. Paste a link, choose the type, resolution, container and quality.</figcaption>
+      </figure>
+      <figure class="panel" id="p-queue" role="tabpanel" aria-labelledby="t-queue" hidden>
+        <div class="win"><picture>
+              <source media="(prefers-color-scheme: dark)" srcset="assets/screens/queue-dark.webp" type="image/webp">
+              <img loading="lazy" src="assets/screens/queue-light.webp" width="651" height="1000" alt="The Downer queue, open, listing every link and every video in a playlist with its own progress">
+            </picture></div>
+        <figcaption>The queue, open. Every link and every video in a playlist, each with its own progress.</figcaption>
+      </figure>
+      <figure class="panel" id="p-peek" role="tabpanel" aria-labelledby="t-peek" hidden>
+        <div class="win"><picture>
+              <source media="(prefers-color-scheme: dark)" srcset="assets/screens/queue-peek.webp" type="image/webp">
+              <img loading="lazy" src="assets/screens/queue-peek.webp" width="651" height="1000" alt="The Downer tray tucked away at the bottom of the window">
+            </picture></div>
+        <figcaption>The tray, tucked away. Overall progress and the current item, while you keep adding links.</figcaption>
+      </figure>
+      <figure class="panel" id="p-popover" role="tabpanel" aria-labelledby="t-popover" hidden>
+        <div class="win"><img loading="lazy" src="assets/screens/popover-dark.webp" width="772" height="412" alt="The Downer menu bar popover"></div>
+        <figcaption>The menu bar popover. Copy a link, press your shortcut, and it opens with the link filled in.</figcaption>
+      </figure>
+      <figure class="panel" id="p-settings" role="tabpanel" aria-labelledby="t-settings" hidden>
+        <div class="win"><img loading="lazy" src="assets/screens/settings-dark.webp" width="639" height="1000" alt="Downer Settings: appearance, the global shortcut and the optional browser sign-in"></div>
+        <figcaption>Settings. Appearance, the global shortcut and the optional browser sign-in.</figcaption>
+      </figure>
+    </div>
+    <div class="menubar reveal">
+      <img loading="lazy" src="assets/screens/menubar-icons.webp" width="1400" height="243" alt="The menu bar icon states on a dark and a light menu bar: idle, downloading, finished and needs attention">
+      <p>The menu bar icon tells you the state at a glance: idle, downloading (a percentage, or item of total), finished, or an orange dot when something needs you.</p>
+    </div>
+  </div>
+</section>
+
+<section id="install">
+  <div class="wrap">
+    <div class="head reveal">
+      <p class="eyebrow">Install</p>
+      <h2 class="h2">Four steps, then it updates itself.</h2>
+      <p class="lede">Downer needs macOS 14 or later, plus yt-dlp and ffmpeg. It can install them for you.</p>
+    </div>
+    <ol class="steps">
+      <li class="reveal"><h3>Download</h3><p>Get the latest <code>.dmg</code> from <a href="https://github.com/dsameendra/Downer/releases/latest">Releases</a>, open it and drag Downer onto Applications.</p></li>
+      <li class="reveal"><h3>Allow it to run</h3><p>Downer is signed with its own certificate, not a paid Apple Developer ID, so macOS may say it can't be opened. Run this once in Terminal:</p>
+        <div class="cmd"><code id="cmd">xattr -dr com.apple.quarantine /Applications/Downer.app</code><button class="btn btn-ghost btn-sm" id="copy" type="button" data-target="cmd">Copy</button></div>
+        <span class="sr" id="copy-status" role="status"></span>
+        <p>Or open the app once, then press <strong>Open Anyway</strong> in System Settings, Privacy &amp; Security.</p></li>
+      <li class="reveal"><h3>Install the tools</h3><p>Open Settings, then Requirements, and press Install next to anything missing. ffmpeg needs <a href="https://brew.sh">Homebrew</a>.</p></li>
+      <li class="reveal"><h3>Allow folder access</h3><p>The first time Downer saves to a protected folder such as Downloads, macOS asks. Choose Allow.</p></li>
+    </ol>
+    <p class="install-cta reveal"><a class="btn btn-primary btn-lg" href="https://github.com/dsameendra/Downer/releases/latest">Download the latest release</a></p>
+  </div>
+</section>
+
+<section id="privacy">
+  <div class="wrap">
+    <div class="head reveal">
+      <p class="eyebrow">Privacy</p>
+      <h2 class="h2">Nothing to sign up for. Nothing phoning home.</h2>
+      <p class="lede">Downer has no accounts, analytics or tracking.</p>
+    </div>
+    <div class="privacy">
+      <div class="card reveal">
+        <h3>It connects to</h3>
+        <ul>
+          <li><b>The sites you download from</b>, through yt-dlp.</li>
+          <li><b>GitHub</b>, to check for Downer updates (a small appcast file, with nothing about your Mac) and to download yt-dlp or deno when you press Install.</li>
+          <li><b>Homebrew</b>, when you install or update tools with it.</li>
+        </ul>
+      </div>
+      <div class="card reveal" style="--i:1">
+        <h3>Your sign-in stays yours</h3>
+        <ul>
+          <li>Browser sign-in is <b>off by default</b>, behind a consent screen.</li>
+          <li>Downer <b>never saves, copies, uploads or logs</b> cookies, and never sees your password.</li>
+          <li>Updates are <b>signed</b>, and Downer refuses one whose signature doesn't match.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>Downer is free and open source (MIT). Built on <a href="https://github.com/yt-dlp/yt-dlp">yt-dlp</a> and <a href="https://www.ffmpeg.org">ffmpeg</a>.</p>
+    <ul>
+      <li><a href="https://github.com/dsameendra/Downer">GitHub</a></li>
+      <li><a href="https://github.com/dsameendra/Downer/releases/latest">Releases</a></li>
+      <li><a href="https://github.com/dsameendra/Downer/issues">Report an issue</a></li>
+      <li><a href="changelog.html">Changelog</a></li>
+    </ul>
+  </div>
+</footer>
+</body>
+</html>

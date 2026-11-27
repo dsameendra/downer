@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Changelog: Downer</title>
+<meta name="description" content="Every Downer release, newest first: what was added, improved and fixed.">
+<link rel="canonical" href="https://dsameendra.github.io/downer/changelog.html">
+<meta name="theme-color" content="#f8f3f4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0e0a0c" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Downer">
+<meta property="og:title" content="Downer changelog">
+<meta property="og:description" content="Paste a link, add as many more as you like, and let Downer work through them in order. A native Mac app for yt-dlp.">
+<meta property="og:url" content="https://dsameendra.github.io/downer/changelog.html">
+<meta property="og:image" content="https://dsameendra.github.io/downer/assets/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="The Downer app icon beside the words Video and audio downloads, native to your Mac.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Downer changelog">
+<meta name="twitter:description" content="Paste a link, add as many more as you like, and let Downer work through them in order.">
+<meta name="twitter:image" content="https://dsameendra.github.io/downer/assets/og.png">
+
+<link rel="icon" href="favicon-32.png" type="image/png" sizes="32x32">
+<link rel="icon" href="favicon-16.png" type="image/png" sizes="16x16">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="stylesheet" href="assets/site.css">
+<script>document.documentElement.classList.add("js")</script>
+<script src="assets/site.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="nav" id="nav">
+  <div class="wrap">
+    <a class="brand" href="index.html" aria-label="Downer home"><img src="favicon-32.png" width="28" height="28" alt="">Downer</a>
+    <nav aria-label="Primary">
+      <ul>
+        <li><a href="index.html#features">Features</a></li>
+        <li><a href="index.html#principles">Principles</a></li>
+        <li><a href="index.html#screenshots">Screenshots</a></li>
+        <li><a href="index.html#install">Install</a></li>
+        <li><a href="index.html#privacy">Privacy</a></li>
+        <li><a href="changelog.html" aria-current="page">Changelog</a></li>
+      </ul>
+    </nav>
+    <a class="btn btn-primary btn-sm" href="https://github.com/dsameendra/Downer/releases/latest">Download</a>
+  </div>
+  <div class="progress" id="progress" aria-hidden="true"></div>
+</header>
+
+<main id="main">
+<section class="page-head">
+  <div class="wrap">
+    <p class="eyebrow">Changelog</p>
+    <h1>What changed in Downer.</h1>
+    <p class="lede">Every release, newest first. Downer checks for updates itself, and you can turn that off in Settings.</p>
+    <ul class="jump" aria-label="Releases">
+      <li><a href="#v2-2-1">2.2.1</a></li>
+      <li><a href="#v2-2-0">2.2.0</a></li>
+      <li><a href="#v2-1-0">2.1.0</a></li>
+      <li><a href="#v2-0-3">2.0.3</a></li>
+      <li><a href="#v2-0-2">2.0.2</a></li>
+      <li><a href="#v2-0">2.0</a></li>
+    </ul>
+  </div>
+</section>
+
+<section class="log">
+  <div class="wrap log-wrap">
+    <article class="release" id="v2-2-1">
+      <header>
+        <h2>Downer 2.2.1</h2>
+        <p class="meta"><span class="tag">Playlist folders, cleaner cancel</span> <time datetime="2026-11-27">27 November 2026</time> <a href="https://github.com/dsameendra/Downer/releases/tag/v2.2.1">Release page</a></p>
+      </header>
+      <ul>
+      <li><strong>Playlist folders.</strong> A whole playlist is saved in a folder named after it, so its videos are easy to find. Turn it off in Settings, Downloads, Put each playlist in its own folder. Single videos, and Download Video from a playlist link, are saved as before.</li>
+      <li><strong>Cancelling cleans up.</strong> The unfinished files a cancelled download leaves behind (<code>.part</code>, <code>.ytdl</code>, the separate video and audio pieces) are removed. Videos that already finished are kept, and a failed download keeps its pieces so Retry can carry on.</li>
+      <li><strong>Show in Finder</strong> now also appears in the menu bar window when a download finishes, as it does in the main window.</li>
+      <li><strong>The window remembers where you left it</strong>, and its size, when you reopen Downer.</li>
+      </ul>
+      <p class="more">Ideas from issue #20.</p>
+    </article>
+    <article class="release" id="v2-2-0">
+      <header>
+        <h2>Downer 2.2.0</h2>
+        <p class="meta"><span class="tag">Video or playlist?</span> <time datetime="2026-11-15">15 November 2026</time> <a href="https://github.com/dsameendra/Downer/releases/tag/v2.2.0">Release page</a></p>
+      </header>
+      <ul>
+      <li><strong>Video or playlist?</strong> A YouTube link to a video playing inside a playlist or Mix (<code>watch?v=…&amp;list=…</code>) asks whether you want just the video or the whole list, instead of downloading the whole list. Set a default in Settings, Downloads.</li>
+      <li><strong>Mixes are never downloaded whole without asking</strong>, and <strong>playlists of 200 or more videos</strong> are confirmed first.</li>
+      <li>A long playlist whose look-up runs out of time keeps the titles it found.</li>
+      </ul>
+    </article>
+    <article class="release" id="v2-1-0">
+      <header>
+        <h2>Downer 2.1.0</h2>
+        <p class="meta"><span class="tag">Sign-in, compatibility and self-updating</span> <time datetime="2026-11-14">14 November 2026</time> <a href="https://github.com/dsameendra/Downer/releases/tag/v2.1.0">Release page</a></p>
+      </header>
+      <ul>
+      <li><strong>Sign in for videos that need it.</strong> Optional and off by default, with a consent screen first. Downer always tries without cookies and only uses your browser's sign-in when a site says it is required.</li>
+      <li><strong>Best Compatibility.</strong> One switch for H.264 + AAC MP4s that play everywhere. It fixes files that play sound but show no picture in QuickTime.</li>
+      <li><strong>MOV container</strong>, next to MP4, MKV and WebM. WebM falls back to MKV when a site has nothing WebM can hold.</li>
+      <li><strong>Extra yt-dlp arguments</strong> from a list of common options. Anything else is refused, with the reason shown.</li>
+      <li><strong>deno, recommended for YouTube</strong>, installed and updated from Settings, and <strong>update buttons</strong> for yt-dlp, ffmpeg and deno. Tools Downer downloads itself are checked against their published checksum.</li>
+      <li><strong>Downer updates itself</strong> with Sparkle, and waits for running downloads to finish first.</li>
+      <li>Clearer, shorter error messages that say what to do next. Cancelling a link while it is looked up stops the look-up. HTTP Error 503 is retried automatically.</li>
+      </ul>
+    </article>
+    <article class="release" id="v2-0-3">
+      <header>
+        <h2>Downer 2.0.3</h2>
+        <p class="meta"><span class="tag">Fixes</span> <time datetime="2026-10-02">2 October 2026</time> <a href="https://github.com/dsameendra/Downer/releases/tag/v2.0.3">Release page</a></p>
+      </header>
+      <ul>
+      <li>The panel at the bottom grows to fit Show in Finder after a download, instead of letting it spill out.</li>
+      <li>The resolution, container and quality pickers are back to the original menus.</li>
+      </ul>
+    </article>
+    <article class="release" id="v2-0-2">
+      <header>
+        <h2>Downer 2.0.2</h2>
+        <p class="meta"><span class="tag">Made for the trackpad</span> <time datetime="2026-10-02">2 October 2026</time> <a href="https://github.com/dsameendra/Downer/releases/tag/v2.0.2">Release page</a></p>
+      </header>
+      <ul>
+      <li><strong>Swipe up with two fingers</strong> on the download tray to open it, down to tuck it away.</li>
+      <li><strong>Swipe a row</strong> sideways to remove, cancel, retry or reveal it. A long swipe does the main action.</li>
+      <li><strong>Drag to reorder</strong> waiting links, and <strong>drop links in</strong> from your browser onto the window or the menu bar icon.</li>
+      <li><strong>Glass switcher</strong> for the download type, swipe gestures in the menu bar popover, and <strong>haptics</strong> on a trackpad (can be turned off). Reduce Motion is respected, and every gesture has a click, keyboard or VoiceOver equivalent.</li>
+      </ul>
+    </article>
+    <article class="release" id="v2-0">
+      <header>
+        <h2>Downer 2.0</h2>
+        <p class="meta"><span class="tag">Liquid Glass and a queue</span> <time datetime="2026-09-30">30 September 2026</time> <a href="https://github.com/dsameendra/Downer/releases/tag/v2.0.1">Release page</a></p>
+      </header>
+      <ul>
+      <li><strong>Liquid Glass design</strong> on macOS 26, a refined material look on macOS 14 and 15, and solid surfaces when Reduce Transparency is on.</li>
+      <li><strong>A download queue.</strong> Add videos and playlists while something is already downloading, with one row per video and retry for the ones that failed.</li>
+      <li><strong>Real progress</strong>: a progress bar, percentage, speed and time left.</li>
+      <li><strong>Set up from Settings.</strong> Downer finds yt-dlp, ffmpeg and ffprobe, and can install them.</li>
+      <li><strong>A smarter menu bar icon</strong>, a global shortcut that opens the popover with your copied link filled in, and a new layered app icon.</li>
+      </ul>
+    </article>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>Downer is free and open source (MIT). Built on <a href="https://github.com/yt-dlp/yt-dlp">yt-dlp</a> and <a href="https://www.ffmpeg.org">ffmpeg</a>.</p>
+    <ul>
+      <li><a href="https://github.com/dsameendra/Downer">GitHub</a></li>
+      <li><a href="https://github.com/dsameendra/Downer/releases/latest">Releases</a></li>
+      <li><a href="https://github.com/dsameendra/Downer/issues">Report an issue</a></li>
+      <li><a href="changelog.html">Changelog</a></li>
+    </ul>
+  </div>
+</footer>
+</body>
+</html>
