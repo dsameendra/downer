@@ -22,6 +22,8 @@ struct JobOptions: Equatable {
     /// Prefer H.264 video so files play everywhere.
     var compatibilityH264 = false
     var extraArguments: [String] = []
+    /// A playlist's videos go into a folder named after the playlist (Settings → Downloads).
+    var playlistFolders = true
     /// deno (or another JS runtime) for YouTube's signature challenges; nil = none, or the yt-dlp is too old.
     /// Not captured when a link is added: it depends on the yt-dlp that actually runs, so the look-up and
     /// the download fill it in just before they start (`DependencyManager.jsRuntimePath(forYtDlpAt:)`).
@@ -42,7 +44,8 @@ struct JobOptions: Equatable {
             folder: URL(fileURLWithPath: defaults.string(forKey: "destinationFolder") ?? downloads),
             cookiesBrowser: CookieBrowser.current(defaults),
             compatibilityH264: defaults.bool(forKey: "compatibilityH264"),
-            extraArguments: ExtraArguments.parse(defaults.string(forKey: "extraArguments") ?? "")
+            extraArguments: ExtraArguments.parse(defaults.string(forKey: "extraArguments") ?? ""),
+            playlistFolders: defaults.object(forKey: "playlistFolders") as? Bool ?? true
         )
     }
 }
@@ -73,6 +76,8 @@ struct DownloadJob: Identifiable, Equatable {
     }
     /// A video's title, or a playlist's name.
     var title: String?
+    /// The playlist's name, when the look-up found one (not for a single video).
+    var playlistTitle: String?
     /// 0…1 for a single video.
     var fraction: Double = 0
     var speed: String?

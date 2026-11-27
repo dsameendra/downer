@@ -27,6 +27,9 @@ final class DownloadManager: ObservableObject {
     private var runningID: UUID?
     private var tracker = PlaylistTracker()
     private var pathFile: URL?
+    /// The names the running download is writing, and when it began: what a cancel cleans up.
+    private var startedFile: URL?
+    private var runStarted = Date()
     private var runDirectory: URL?
     /// "Chrome sign-in · " while the running job uses a browser's cookies; fixed when the run starts, so
     /// the many progress lines don't look the browser up again.
@@ -274,7 +277,18 @@ final class DownloadManager: ObservableObject {
     func cancelCurrent() {
         guard process != nil else { return }
         wasCancelled = true
-        process?.terminate()
+        Self.terminateTree(process)
+    }
+
+    /// yt-dlp's helpers (ffmpeg while merging) first, so none of them keeps writing after yt-dlp is gone.
+    private static func terminateTree(_ process: Process?) {
+        guard let process, process.isRunning else { return }
+        let kill = Process()
+        kill.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
+        kill.arguments = ["-TERM", "-P", String(process.processIdentifier)]
+        try? kill.run()
+        kill.waitUntilExit()
+        process.terminate()
     }
 
     /// Stop everything, including what is waiting.
@@ -291,7 +305,7 @@ final class DownloadManager: ObservableObject {
         startNotes.removeAll()
         if process != nil {
             wasCancelled = true
-            process?.terminate()
+            Self.terminateTree(process)
         } else {
             status = "Download cancelled."
             scheduleIdle()
@@ -463,7 +477,10 @@ final class DownloadManager: ObservableObject {
         if let i = jobs.firstIndex(where: { $0.id == id }) {
             jobs[i].isResolving = false
             if usedCookies { jobs[i].needsCookies = true }
-            if let result { jobs[i].title = result.playlistTitle ?? result.titles.first }
+            if let result {
+                jobs[i].title = result.playlistTitle ?? result.titles.first
+                jobs[i].playlistTitle = result.playlistTitle.flatMap { $0.isEmpty ? nil : $0 }
+            }
             if let result, jobs[i].state == .queued {
                 if let name = result.playlistTitle, result.titles.count > 1 {
                     jobs[i].playlist = PlaylistProgress(
@@ -640,6 +657,9 @@ final class DownloadManager: ObservableObject {
 
         let pathFile = fm.temporaryDirectory.appendingPathComponent("downer-\(UUID().uuidString).txt")
         self.pathFile = pathFile
+        let startedFile = fm.temporaryDirectory.appendingPathComponent("downer-started-\(UUID().uuidString).txt")
+        self.startedFile = startedFile
+        runStarted = Date()
         // cookies only once this job has hit a sign-in wall (see finished(code:job:))
         let args = YtDlpArguments.build(
             for: options,
@@ -647,7 +667,9 @@ final class DownloadManager: ObservableObject {
                 pathFile: pathFile.path,
                 ffmpegDirectory: (ffmpegPath as NSString).deletingLastPathComponent,
                 outputFolder: job.options.folder.path,
-                only: job.only),
+                only: job.only,
+                startedFile: startedFile.path,
+                playlistFolder: options.playlistFolders && job.playlistTitle != nil),
             useCookies: job.needsCookies, url: job.ytDlpURL)
 
         guard let workDirectory = RunDirectory.make() else {
@@ -778,6 +800,18 @@ final class DownloadManager: ObservableObject {
             .split(whereSeparator: \.isNewline).map { URL(fileURLWithPath: String($0)) } ?? []
         if let pathFile { try? FileManager.default.removeItem(at: pathFile) }
         pathFile = nil
+        // a cancelled download leaves its partial files in the destination: remove them (a failed one
+        // keeps them, so a retry can carry on)
+        let started = startedFile
+            .flatMap { try? String(contentsOf: $0, encoding: .utf8) }?
+            .split(whereSeparator: \.isNewline).map { URL(fileURLWithPath: String($0)) } ?? []
+        if let startedFile { try? FileManager.default.removeItem(at: startedFile) }
+        startedFile = nil
+        if wasCancelled {
+            PartialFiles.clean(
+                after: started, destination: jobs.first(where: { $0.id == id })?.options.folder,
+                since: runStarted)
+        }
         RunDirectory.remove(runDirectory)
         runDirectory = nil
 

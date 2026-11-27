@@ -11,7 +11,9 @@ import Foundation
 enum YtDlpArguments {
     enum Purpose: Equatable {
         case probe(only: [Int]?)
-        case download(pathFile: String, ffmpegDirectory: String, outputFolder: String, only: [Int]?)
+        case download(
+            pathFile: String, ffmpegDirectory: String, outputFolder: String, only: [Int]?,
+            startedFile: String? = nil, playlistFolder: Bool = false)
     }
 
     /// Order: format args (download only), extra args, cookie flags, the video-or-playlist flag, Downer's
@@ -49,7 +51,7 @@ enum YtDlpArguments {
             // still has the titles listed so far (by default yt-dlp collects the whole list first)
             args += ["--flat-playlist", "--lazy-playlist", "--no-warnings", "--print", "%(playlist_title|)s\t%(title)s"]
             args += items(only)
-        case .download(let pathFile, let ffmpegDirectory, let outputFolder, let only):
+        case .download(let pathFile, let ffmpegDirectory, let outputFolder, let only, let startedFile, let playlistFolder):
             // A config file's --write-info-json / --embed-info-json would write the `cookies` field of the
             // info dict to disk when Sign-in is on, so cancel them for every download.
             args += ["--no-write-info-json", "--no-embed-info-json"]
@@ -58,9 +60,12 @@ enum YtDlpArguments {
             // Thumbnails, subtitles and playlist files follow the default template; only chapters
             // (--split-chapters) have a template of their own. The names are yt-dlp's own defaults.
             // (Not `-P`: yt-dlp trims spaces from it, which would change a folder like "Videos ".)
-            args += ["-o", outputTemplate(folder: outputFolder)]
-            args += ["-o", "chapter:" + outputTemplate(folder: outputFolder, file: chapterFileTemplate)]
+            let inFolder = playlistFolder ? playlistFolderPrefix : ""
+            args += ["-o", outputTemplate(folder: outputFolder, file: inFolder + defaultFileTemplate)]
+            args += ["-o", "chapter:" + outputTemplate(folder: outputFolder, file: inFolder + chapterFileTemplate)]
             args += ["--print-to-file", "after_move:filepath", pathFile]
+            // the names each video is about to be written under: what a cancel has to clean up after
+            if let startedFile { args += ["--print-to-file", "before_dl:filename", startedFile] }
             args += ["--newline", "--ffmpeg-location", ffmpegDirectory]
             args += items(only)
         }
@@ -74,6 +79,11 @@ enum YtDlpArguments {
         let base = folder.hasSuffix("/") ? String(folder.dropLast()) : folder
         return base.replacingOccurrences(of: "%", with: "%%") + "/" + file
     }
+
+    /// The playlist's name and a slash, for a job whose look-up found a playlist name. The slash must be
+    /// literal text in the template: one that comes out of a field's value would be replaced by yt-dlp
+    /// (`⧸`) and end up inside a file name instead of separating a folder. yt-dlp makes the name itself safe.
+    nonisolated static let playlistFolderPrefix = "%(playlist_title)s/"
 
     /// yt-dlp's default names (`DEFAULT_OUTTMPL` in yt-dlp's utils).
     nonisolated static let defaultFileTemplate = "%(title)s [%(id)s].%(ext)s"
